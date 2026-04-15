@@ -1,0 +1,9 @@
+uint64 cartype
+uint8 gear_status
+uint8 system_command
+int8 temperature_get
+uint8 polling_mode
+uint8 uss_enable
+uint8 counter
+int32 vehicle_speed
+uint8 param_change_enable

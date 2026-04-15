@@ -2,6 +2,20 @@
 #include <std_msgs/msg/string.hpp>
 #include "od_fusion/applications/od_fusion_component.h"
 #include "od_fusion/lib/rviz_display.h"
+#include "calmcar/msg/car_info_h.hpp"
+#include "calmcar/msg/global_pose_estimation.hpp"
+#include "calmcar/msg/parking_slot_set.hpp"
+#include "calmcar/msg/perception_command.hpp"
+#include "calmcar/msg/uss_info.hpp"
+#include "calmcar/msg/freespace_set.hpp"
+#include "calmcar/msg/object_set.hpp"
+#include "calmcar/msg/front_camera_object.hpp"
+#include "calmcar/msg/front_camera_lane.hpp"
+#include "calmcar/msg/working_status.hpp"
+#include "calmcar/msg/road_lane_set.hpp"
+#include "calmcar/msg/uss_raw_data_set.hpp"
+#include "calmcar/msg/working_status.hpp"
+#include "calmcar/msg/desired_trajectory_general.hpp"
 
 namespace perception {
 namespace fusion {

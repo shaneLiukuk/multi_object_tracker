@@ -1,0 +1,8 @@
+float32 steering_angle
+uint8 steering_enable
+float32 steering_column_torque
+uint8 driver_override
+uint8 steering_control_available
+float32 steering_angle_speed
+uint64 can_time
+uint64 system_time

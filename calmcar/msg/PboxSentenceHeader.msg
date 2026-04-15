@@ -1,0 +1,10 @@
+char[20] sync_header
+char[10] port
+int32 seq
+float32 idle_time
+char[30] time_status
+uint32 week
+float32 seconds
+uint32 receiver_status
+uint32 reserved_field
+uint32 receiver_sw_version

@@ -1,0 +1,8 @@
+uint64 time_stamp
+uint8 counter
+float32 parking_distance_remainning
+float32 parking_time_remaining
+float32 parking_distance_total
+float32 actual_x
+float32 actual_y
+uint16 path_id

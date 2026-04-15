@@ -1,0 +1,4 @@
+VehiclePoint vehiclepoint0
+VehiclePoint vehiclepoint1
+VehiclePoint vehiclepoint2
+VehiclePoint vehiclepoint3

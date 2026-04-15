@@ -7,6 +7,7 @@ if(CMAKE_CXX_STANDARD VERSION_LESS 17)
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(calmcar REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(ament_cmake_gtest REQUIRED)
@@ -32,6 +33,7 @@ ament_target_dependencies(${PROJECT_NAME}_node
   rclcpp
   std_msgs
   visualization_msgs
+  calmcar
 )
 
 ament_add_gtest(test_od_fusion

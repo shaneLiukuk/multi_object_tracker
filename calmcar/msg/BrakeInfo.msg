@@ -1,0 +1,11 @@
+uint8 braking_status
+float32 brake_pedal_output
+float32 master_cylinder_pressure
+uint8 brake_control_available
+uint8 brake_error
+uint8 brake_enable
+uint8 driver_override
+uint8 abs_enable
+uint8 abs_active
+uint64 can_time
+uint64 system_time

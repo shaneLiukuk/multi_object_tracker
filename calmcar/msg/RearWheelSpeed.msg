@@ -1,0 +1,12 @@
+float64 whl_spd_rl
+int8 whl_spd_rlv
+float64 whl_spd_rr
+int8 whl_spd_rrv
+uint8 whl_gnd_sen_err_rl
+int8 whl_dircn_rrv
+uint8 whl_dircn_rr
+int8 whl_dircn_rlv
+uint8 whl_dircn_rl
+uint8 whl_gnd_sen_err_rr
+uint8 rear_wheel_speed_rll_cnt
+uint8 rear_wheel_speed_chk_sum

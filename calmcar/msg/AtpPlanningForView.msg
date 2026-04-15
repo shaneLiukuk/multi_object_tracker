@@ -1,0 +1,7 @@
+uint64 time_stamp
+uint64 time_stamp_fusion
+uint8 trajectories_cnt
+float32 step_length
+ViewTrajectoryGeneral view_trajectory_general
+ViewTrajectory view_trajectories
+uint8 plan_ok

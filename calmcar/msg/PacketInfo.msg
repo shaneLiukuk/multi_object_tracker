@@ -1,0 +1,7 @@
+uint64 version
+uint8 packet_counter
+int8 temperature_cfg
+uint64 packet_timestamp
+uint8 status_amp
+uint16 diagnosis_set
+int8 processing_status

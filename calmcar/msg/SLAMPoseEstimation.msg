@@ -1,0 +1,11 @@
+uint64 time_stamp
+uint64 time_stamp_can
+float64 x
+float64 y
+float64 z
+float64 heading
+float64 pitch
+float64 roll
+uint8[16] map_name
+float32 parking_distance_remainning
+float32 parking_time_remaining

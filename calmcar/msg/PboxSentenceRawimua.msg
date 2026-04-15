@@ -1,0 +1,10 @@
+uint16 header_week
+float64 header_second
+uint32 imustatus
+float32 zaccel
+float32 rawimuaa_yaccel
+float32 xaccel
+float32 zgyro
+float32 ygyro
+float32 xgyro
+uint64 systemtime_pboxraw

@@ -1,0 +1,6 @@
+uint32 obstacleidsen
+uint8 obstacletypesen
+uint8 dangerlevelsen
+float32 centerpositionxsen
+float32 centerpositionysen
+float32 odomheadingsen

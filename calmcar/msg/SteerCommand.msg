@@ -1,0 +1,12 @@
+uint8 steer_enable
+uint8 steer_system_mode
+uint8 steer_system_mode_valid
+uint8 steer_clear
+float32 steering_target_degree
+float32 steering_speed_command
+float32 steering_torque_req
+uint8 steering_torque_req_valid
+uint8 adas_epsangmultiplexor
+uint8 adas_epsepsmodereq
+float32 steering_command3
+float32 steering_command4

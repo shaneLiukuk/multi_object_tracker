@@ -1,0 +1,2 @@
+uint8 polling_mode
+uint8 dispatching_cycle

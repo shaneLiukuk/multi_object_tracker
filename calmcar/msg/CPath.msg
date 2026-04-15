@@ -1,0 +1,2 @@
+CHeader header
+CPoseStamped[] poses

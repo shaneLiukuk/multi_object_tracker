@@ -1,0 +1,10 @@
+uint64 time_stamp
+float32 p0_x
+float32 p0_y
+float32 p1_x
+float32 p1_y
+float32 p2_x
+float32 p2_y
+uint8 slot
+float32 p_z
+float32 heading

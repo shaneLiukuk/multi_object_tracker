@@ -1,0 +1,4 @@
+uint64 time_stamp
+uint8 system_command
+uint8 emergency_brake
+uint8 reset_system

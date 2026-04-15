@@ -1,0 +1,6 @@
+uint64 timestamp
+GlbRoadMaks glbroadmakmapsen
+GlbObstacleList glbprcpobstaclesen
+GlbPrkgSlotsList[800] glbprkgslots
+uint16 slotcnt
+uint32 destinationslotid

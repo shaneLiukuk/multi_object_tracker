@@ -1,0 +1,8 @@
+uint8 throttle_enable
+uint8 throttle_override
+uint8 throttle_pedal
+uint8 throttle_system_mode
+uint16 throttle_command
+float32 throttle_target_acce
+float32 throttle_output3
+float32 throttle_output4

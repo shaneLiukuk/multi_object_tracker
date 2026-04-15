@@ -1,0 +1,15 @@
+uint8 autvaltprkgshodstpushswt
+uint8 lospddrvgassishopushresp
+uint8 autvaltprkgintrbtnreq
+AutValtPrkgMapOperReqInfo autvaltprkgmapoperreq
+uint8 autvaltprkgswtreq
+uint8 autvaltprkgmapmagswtreq
+uint32 prkslotseln
+uint8 prkginoroutandcncl
+uint8 drvrasscsysparkmod
+uint8 prkgintrptreldbtn
+uint8 drvrasscsysbtnpush
+uint8 prkgfctswt
+uint8 mobdevrpareqrpareq
+uint8 mobdevrpareqrspactrl
+uint8 mobdevrpareqrpaoutmodesubt

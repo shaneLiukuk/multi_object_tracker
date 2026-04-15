@@ -1,0 +1,2 @@
+uint8 replan_counter
+CCParkingSlot planning_slot

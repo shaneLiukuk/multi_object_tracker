@@ -1,0 +1,9 @@
+uint64 time_stamp
+uint64 time_stamp_camera
+uint32 frame_id
+int16 width
+int16 height
+uint8 format
+int32 width_step
+uint8 pixel_size
+uint8[230400] data

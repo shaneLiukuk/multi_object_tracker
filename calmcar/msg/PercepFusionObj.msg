@@ -1,0 +1,11 @@
+uint64 targetidsen
+uint8 dangerlevelsen
+int16 headingsen
+int32 centerpositionxsen
+int32 centerpositionysen
+uint16 velocitysen
+uint8 objecttypesen
+uint32 sizexsen
+uint32 sizeysen
+uint32 sizezsen
+uint8 turninglightsen

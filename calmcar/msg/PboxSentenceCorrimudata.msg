@@ -1,0 +1,10 @@
+uint32 week
+float64 seconds_into_week
+float64 pitch_rate
+float64 roll_rate
+float64 yaw_rate
+float64 lateral_acc
+float64 longitudinal_acc
+float64 vertical_acc
+uint32 checksum
+uint64 system_time_pbox

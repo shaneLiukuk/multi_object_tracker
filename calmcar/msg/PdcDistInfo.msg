@@ -1,0 +1,12 @@
+uint16 flc_distance
+uint16 flm_distance
+uint16 frm_distance
+uint16 frc_distance
+uint16 rlc_distance
+uint16 rlm_distance
+uint16 rrm_distance
+uint16 rrc_distance
+uint16 fls_distance
+uint16 frs_distance
+uint16 rls_distance
+uint16 rrs_distance

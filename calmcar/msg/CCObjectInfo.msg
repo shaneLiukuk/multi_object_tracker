@@ -1,0 +1,17 @@
+float32 distance_x
+float32 distance_y
+uint16 tracking_id
+uint8 class_id
+uint8 angle_view
+uint8 confidence
+float32 width
+float32 height
+float32 length
+float32 yaw
+float32 relative_velocity_x
+float32 relative_velocity_y
+float32 relative_acceleration_x
+float32 relative_acceleration_y
+uint8 motion_status
+uint16 valid_status
+uint8 target_source

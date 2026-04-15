@@ -1,0 +1,4 @@
+uint64 time_stamp
+uint8 counter
+uint8 parking_slot_direction
+uint8 atp_parkingout_type

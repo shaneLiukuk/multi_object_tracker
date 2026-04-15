@@ -1,0 +1,15 @@
+CHeader header
+string ns
+int32 id
+int32 type
+int32 action
+CPose pose
+CVector3 scale
+CColorRGBA color
+CDuration lifetime
+uint8 frame_locked
+CPoint[] points
+CColorRGBA[] colors
+string text
+string mesh_resource
+uint8 mesh_use_embedded_materials

@@ -1,0 +1,10 @@
+uint8 echo_num
+uint16[10] distance
+uint16[10] width
+uint8[10] peak
+uint16 ring_time
+uint8 valid_fram
+uint8 confidence
+uint8 status_work
+uint8 counter
+uint64 system_time

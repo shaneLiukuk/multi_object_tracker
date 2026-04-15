@@ -1,0 +1,14 @@
+uint8 brake_enable
+uint8 brake_prefill
+uint8 brake_system_mode
+float32 brake_deceleration_value
+uint8 dec_to_stop_flag
+uint8 brake_control_mode
+uint8 emergency_brake_valid
+uint16 brake_torque_value
+uint8 brake_torque_value_valid
+uint16 brake_stop_distance
+float32 brake_speed_limit
+uint8 brake_command4
+float32 brake_command5
+float32 brake_command6

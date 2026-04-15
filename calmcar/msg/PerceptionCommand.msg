@@ -1,0 +1,9 @@
+uint64 time_stamp
+uint8 enable_parking_slot_detection
+uint8 enable_object_detection
+uint8 enable_freespace_detection
+uint8 enable_uss
+uint8 enable_radar
+uint8 enable_lidar
+uint8 system_command
+uint8 system_reset

@@ -1,0 +1,8 @@
+uint16 front_left_pressure
+uint16 front_right_pressure
+uint16 rear_left_pressure
+uint16 rear_right_pressure
+uint8 front_left_pressure_alarm
+uint8 front_right_pressure_alarm
+uint8 rear_left_pressure_alarm
+uint8 rear_right_pressure_alarm

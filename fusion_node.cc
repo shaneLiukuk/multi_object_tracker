@@ -7,22 +7,21 @@ namespace fusion {
 
 class FusionNode : public rclcpp::Node {
  public:
-  FusionNode();
+  explicit FusionNode(const OdFusionComponent::Config& config);
 
  private:
   void TimerCallback();
 
-  std::unique_ptr<OdFusionComponent> fusion_component_;
+  OdFusionComponent fusion_component_;
   rclcpp::TimerBase::SharedPtr timer_;
   int32_t frame_count_;
 };
 
-FusionNode::FusionNode()
+FusionNode::FusionNode(const OdFusionComponent::Config& config)
     : Node("od_fusion_node"),
+      fusion_component_(config),
       frame_count_(0) {
-  fusion_component_ = std::make_unique<OdFusionComponent>();
-
-  if (!fusion_component_->Init()) {
+  if (!fusion_component_.Init()) {
     RCLCPP_ERROR(this->get_logger(), "Failed to init fusion component");
     return;
   }
@@ -39,7 +38,7 @@ FusionNode::FusionNode()
 void FusionNode::TimerCallback() {
   frame_count_++;
 
-  FrameData frame_data;
+  SvsFrame svs_frame;
   GlobalPose svs_pose;
 
   svs_pose.time_stamp = static_cast<uint64_t>(frame_count_) * 50 * 1000000;
@@ -50,7 +49,6 @@ void FusionNode::TimerCallback() {
   svs_pose.pitch = 0.0f;
   svs_pose.roll = 0.0f;
 
-  SvsFrame svs_frame;
   svs_frame.time_ns = svs_pose.time_stamp;
 
   const int32_t kObjectsPerFrame = 3;
@@ -79,14 +77,10 @@ void FusionNode::TimerCallback() {
     svs_frame.svs_object_list.push_back(svs_obj);
   }
 
-  frame_data.svs_frame = svs_frame;
-  frame_data.svs_pose = svs_pose;
-
-  uint64_t meas_time = svs_pose.time_stamp;
-  fusion_component_->Process(frame_data, meas_time);
+  fusion_component_.ProcessSvsFrame(svs_frame, svs_pose);
 
   std::vector<FusedObject> results;
-  fusion_component_->GetFusionResults(&results);
+  fusion_component_.GetFusionResults(&results);
 
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                        "Frame %d: processed %zu objects, output %zu tracks",
@@ -98,7 +92,13 @@ void FusionNode::TimerCallback() {
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<perception::fusion::FusionNode>();
+
+  perception::fusion::OdFusionComponent::Config config;
+  config.enable_svs = true;
+  config.enable_bev = false;
+  config.enable_radar = false;
+
+  auto node = std::make_shared<perception::fusion::FusionNode>(config);
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

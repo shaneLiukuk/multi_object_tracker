@@ -113,8 +113,9 @@ FusedObject MapRadarToFusedObject(const Object& meas, uint64_t timestamp_raw,
 
 }  // namespace
 
-OdFusionComponent::OdFusionComponent()
-    : fusion_counter_(0) {
+OdFusionComponent::OdFusionComponent(const Config& config)
+    : config_(config),
+      fusion_counter_(0) {
   tracker_processor_ = std::make_unique<TrackerProcessor>();
 }
 
@@ -126,27 +127,98 @@ bool OdFusionComponent::Init() {
   return true;
 }
 
+FusedObject OdFusionComponent::ConvertSvsObject(const SvsObject& svs_obj) {
+  return MapSvsToFusedObject(svs_obj.object, svs_obj.timestamp_raw);
+}
+
+FusedObject OdFusionComponent::ConvertBevObject(const BevObject& bev_obj,
+                                                  float veh_head_rear_wheel) {
+  return MapBevToFusedObject(bev_obj.object, bev_obj.timestamp_raw,
+                             veh_head_rear_wheel);
+}
+
+FusedObject OdFusionComponent::ConvertRadarObject(const RadarObject& radar_obj,
+                                                    float veh_spd) {
+  return MapRadarToFusedObject(radar_obj.object, radar_obj.timestamp_raw,
+                               veh_spd);
+}
+
+void OdFusionComponent::ProcessSvsFrame(const SvsFrame& svs_frame,
+                                         const GlobalPose& svs_pose) {
+  if (!config_.enable_svs || !tracker_processor_) {
+    return;
+  }
+
+  std::vector<FusedObject> svs_observations;
+  for (const auto& svs_obj : svs_frame.svs_object_list) {
+    if (svs_obj.object.flag == 1 &&
+        IsInValidRange(svs_obj.object.x, svs_obj.object.y)) {
+      svs_observations.push_back(ConvertSvsObject(svs_obj));
+    }
+  }
+
+  uint64_t meas_time = svs_pose.time_stamp;
+  std::vector<FusedObject> results;
+  tracker_processor_->Process(svs_observations, svs_pose, meas_time,
+                              SensorType::kSvs, &results);
+}
+
+void OdFusionComponent::ProcessBevFrame(const BevFrame& bev_frame,
+                                         const GlobalPose& bev_pose,
+                                         float veh_head_rear_wheel) {
+  if (!config_.enable_bev || !tracker_processor_) {
+    return;
+  }
+
+  std::vector<FusedObject> bev_observations;
+  for (const auto& bev_obj : bev_frame.bev_object_list) {
+    if (bev_obj.object.flag == 1 &&
+        IsInValidRange(bev_obj.object.x, bev_obj.object.y)) {
+      bev_observations.push_back(ConvertBevObject(bev_obj, veh_head_rear_wheel));
+    }
+  }
+
+  uint64_t meas_time = bev_pose.time_stamp;
+  std::vector<FusedObject> results;
+  tracker_processor_->Process(bev_observations, bev_pose, meas_time,
+                              SensorType::kBev, &results);
+}
+
+void OdFusionComponent::ProcessRadarFrame(const RadarFrame& radar_frame,
+                                          const GlobalPose& radar_pose,
+                                          float veh_spd) {
+  if (!config_.enable_radar || !tracker_processor_) {
+    return;
+  }
+
+  std::vector<FusedObject> radar_observations;
+  for (const auto& radar_obj : radar_frame.radar_object_list) {
+    if (radar_obj.object.flag == 1) {
+      radar_observations.push_back(ConvertRadarObject(radar_obj, veh_spd));
+    }
+  }
+
+  uint64_t meas_time = radar_pose.time_stamp;
+  std::vector<FusedObject> results;
+  tracker_processor_->Process(radar_observations, radar_pose, meas_time,
+                              SensorType::kRadar, &results);
+}
+
 void OdFusionComponent::Process(const FrameData& frame_data, uint64_t meas_time) {
   if (!tracker_processor_) {
     return;
   }
 
-  std::vector<FusedObject> svs_observations;
-  for (const auto& svs_obj : frame_data.svs_frame.svs_object_list) {
-    if (svs_obj.object.flag == 1 && IsInValidRange(svs_obj.object.x, svs_obj.object.y)) {
-      svs_observations.push_back(MapSvsToFusedObject(
-          svs_obj.object, svs_obj.timestamp_raw));
-    }
+  if (config_.enable_svs && !frame_data.svs_frame.svs_object_list.empty()) {
+    ProcessSvsFrame(frame_data.svs_frame, frame_data.svs_pose);
   }
 
-  std::vector<FusedObject> results;
-  tracker_processor_->Process(svs_observations, frame_data.svs_pose,
-                               meas_time, SensorType::kSvs, &results);
-}
+  if (config_.enable_bev && !frame_data.bev_frame.bev_object_list.empty()) {
+    ProcessBevFrame(frame_data.bev_frame, frame_data.bev_pose, 0.0f);
+  }
 
-void OdFusionComponent::GetTrackedObjects(std::vector<FusedObject>* tracked_objects) {
-  if (tracker_processor_) {
-    tracker_processor_->GetResults(tracked_objects);
+  if (config_.enable_radar && !frame_data.radar_frame.radar_object_list.empty()) {
+    ProcessRadarFrame(frame_data.radar_frame, frame_data.radar_pose, 0.0f);
   }
 }
 

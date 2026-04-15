@@ -9,7 +9,11 @@ namespace fusion {
 class OdFusionTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    fusion_component_ = std::make_unique<OdFusionComponent>();
+    OdFusionComponent::Config config;
+    config.enable_svs = true;
+    config.enable_bev = false;
+    config.enable_radar = false;
+    fusion_component_ = std::make_unique<OdFusionComponent>(config);
     ASSERT_TRUE(fusion_component_->Init());
   }
 
@@ -110,7 +114,8 @@ TEST_F(OdFusionTest, ContinuousTracking) {
     }
   }
 
-  EXPECT_EQ(prev_positions.size(), 38U);
+  constexpr int32_t kExpectedPositions = kNumFrames * 64;
+  EXPECT_EQ(prev_positions.size(), kExpectedPositions);
 }
 
 TEST_F(OdFusionTest, EmptyFrameProcessing) {

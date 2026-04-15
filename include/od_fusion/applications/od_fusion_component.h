@@ -26,6 +26,8 @@ class OdFusionComponent {
 
   void GetFusionResults(std::vector<FusedObject>* results);
 
+  const Config& GetConfig() const { return config_; }
+
  private:
   void ProcessSvs(const SvsFrame& svs_frame, const GlobalPose& svs_pose);
 

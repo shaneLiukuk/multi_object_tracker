@@ -45,15 +45,34 @@ colcon build
 
 ```bash
 # 进入工作空间
-cd ~/fusion_ws
+  cd /home/nick/fusion_ws
 
-# 编译
-source /opt/ros/humble/setup.bash
-colcon build --packages-select od_fusion
+  # 1. 先编译 calmcar（生成 msg 头文件）
+  source /opt/ros/humble/setup.bash
+  colcon build --packages-select calmcar
 
-# 运行测试
-source install/setup.bash
-/home/nick/od_fusion/build/od_fusion/test_od_fusion
+  # 2. 再编译 od_fusion
+  source install/setup.bash
+  colcon build --packages-select od_fusion
+
+  source /opt/ros/humble/setup.bash && colcon build --packages-select calmcar 2>&1
+  source install/setup.bash && colcon build --packages-select od_fusion 2>&1
+
+  # 3. 运行测试
+  ./build/od_fusion/test_od_fusion
+
+  # 4. 运行节点（需要实际传感器数据发布才能正常运行）
+  ./build/od_fusion/od_fusion_node
+
+  注意：运行时出现的 GLIBCXX_3.4.30 not found 错误是 Anaconda 与 ROS2 的 libstdc++ 版本冲突，解决方案：
+
+  # 方案1：临时使用系统库
+  export LD_LIBRARY_PATH=/opt/ros/humble/lib:$LD_LIBRARY_PATH
+
+  # 方案2：或启动时指定
+  conda deactivate  # 退出 anaconda 环境
+  ./build/od_fusion/od_fusion_node
+
 ```
 
 ## 2. 运行流程

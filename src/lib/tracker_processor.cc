@@ -10,10 +10,7 @@ namespace fusion {
 namespace {
 
 constexpr int32_t kThresLost = 10;
-constexpr int32_t kThresStable = 3;
-constexpr int32_t kThresUnstable = 2;
 constexpr int32_t kThresOutput = 7;
-constexpr int32_t kThresIdAssign = 20;
 constexpr float kStaticCntLow = 20.0f;
 constexpr float kStaticDisThres = 15.0f;
 constexpr float kVelocityThreshold = 1e-4f;
@@ -33,102 +30,26 @@ bool IsStaticObject(ObjectType type) {
 }  // namespace
 
 TrackerProcessor::TrackerProcessor()
-    : track_cnt_(0), cursor_(1) {
+    : track_cnt_(0) {
+  tracks_.resize(kTrackWidth);
+  meas_flags_.resize(kMaxObsFuse, 0);
   Init();
 }
 
 void TrackerProcessor::Init() {
-  const int32_t matrix_size = kTrackDepth * kTrackWidth;
-  matrix_.resize(matrix_size);
-  lst_flg_.assign(matrix_size, 0);
-  status_.resize(kTrackWidth);
-  kalman_filters_.resize(kTrackWidth);
-  estimated_.resize(kTrackWidth);
-  output_.resize(kTrackWidth);
-  meas_flags_.resize(kMaxObsFuse, 0);
-  cursor_ = 1;
+  for (int32_t i = 0; i < kTrackWidth; ++i) {
+    tracks_[i].SetId(i);
+    tracks_[i].Reset();
+  }
+  meas_flags_.assign(kMaxObsFuse, 0);
   track_cnt_ = 0;
 }
 
 void TrackerProcessor::Reset() {
   for (int32_t i = 0; i < kTrackWidth; ++i) {
-    ResetTrack(i);
+    tracks_[i].Reset();
   }
   track_cnt_ = 0;
-  cursor_ = 1;
-}
-
-void TrackerProcessor::ResetTrack(int32_t slot_idx) {
-  if (slot_idx < 0 || slot_idx >= kTrackWidth) {
-    return;
-  }
-  status_[slot_idx].cnt = 0;
-  status_[slot_idx].cnt_svs = 0;
-  status_[slot_idx].cnt_bev = 0;
-  status_[slot_idx].cnt_radar = 0;
-  status_[slot_idx].cnt_fused = 0;
-  status_[slot_idx].lst = 0;
-  status_[slot_idx].lst_svs = 0;
-  status_[slot_idx].lst_bev = 0;
-  status_[slot_idx].lst_radar = 0;
-  status_[slot_idx].used = 0;
-  status_[slot_idx].flag = 0;
-  status_[slot_idx].fused_type = ObjectType::kUnknown;
-  status_[slot_idx].state = TrackState::kUntracking;
-
-  for (int d = 0; d < kTrackDepth; ++d) {
-    matrix_[d * kTrackWidth + slot_idx] = FusedObject();
-  }
-  for (int d = 0; d < kTrackDepth; ++d) {
-    lst_flg_[d * kTrackWidth + slot_idx] = 0;
-  }
-
-  output_[slot_idx] = FusedObject();
-  estimated_[slot_idx] = FusedObject();
-}
-
-int32_t TrackerProcessor::GetPreviousIndex(int32_t offset) const {
-  int32_t idx = static_cast<int32_t>(cursor_) - offset - 1;
-  if (idx < 1) {
-    idx += kTrackDepth;
-  }
-  return idx;
-}
-
-int32_t TrackerProcessor::GetNextCursor() const {
-  if (cursor_ >= kTrackDepth) {
-    return 1;
-  }
-  return cursor_ + 1;
-}
-
-FusedObject& TrackerProcessor::GetTrackObject(int32_t track_idx) {
-  return matrix_[(cursor_ - 1) * kTrackWidth + track_idx];
-}
-
-const FusedObject& TrackerProcessor::GetTrackObject(int32_t track_idx) const {
-  return matrix_[(cursor_ - 1) * kTrackWidth + track_idx];
-}
-
-void TrackerProcessor::UpdateCounter(int32_t* cnt, int32_t* lst, bool valid) {
-  if (cnt == nullptr || lst == nullptr) {
-    return;
-  }
-  if (valid) {
-    *cnt = *cnt + 1;
-    *lst = std::max(0, *lst - 1);
-  } else {
-    *cnt = std::max(0, *cnt - 1);
-    *lst = *lst + 1;
-  }
-}
-
-bool TrackerProcessor::IsTrackReplaceable(int32_t idx) const {
-  if (idx < 0 || idx >= kTrackWidth) {
-    return false;
-  }
-  ObjDetProp det_prop = output_[idx].obj_det_prop;
-  return !(det_prop == ObjDetProp::kSoleRadar || det_prop == ObjDetProp::kFused);
 }
 
 void TrackerProcessor::Process(
@@ -189,8 +110,8 @@ void TrackerProcessor::AssociateTracks(
   }
 
   bool has_used_track = false;
-  for (const auto& s : status_) {
-    if (s.used > 0) {
+  for (const auto& track : tracks_) {
+    if (track.IsUsed()) {
       has_used_track = true;
       break;
     }
@@ -199,19 +120,20 @@ void TrackerProcessor::AssociateTracks(
     return;
   }
 
-  int32_t last_idx = GetPreviousIndex(1);
-
   Eigen::MatrixXf cost_matrix = Eigen::MatrixXf::Ones(num_m, num_t) * 10000.0f;
 
   for (int32_t j = 0; j < num_t; ++j) {
-    if (status_[j].used == 0) {
+    if (!tracks_[j].IsUsed()) {
       continue;
     }
 
-    float tx = estimated_[j].object.x;
-    float ty = estimated_[j].object.y;
-    float tvx = estimated_[j].object.vx;
-    float tvy = estimated_[j].object.vy;
+    float tx = tracks_[j].GetEstimated().object.x;
+    float ty = tracks_[j].GetEstimated().object.y;
+    float tvx = tracks_[j].GetEstimated().object.vx;
+    float tvy = tracks_[j].GetEstimated().object.vy;
+
+    int32_t prev_idx = tracks_[j].GetPreviousIndex(1);
+    const FusedObject& prev_obs = tracks_[j].GetHistoryObject(prev_idx);
 
     for (int32_t i = 0; i < num_m && i < static_cast<int32_t>(observations.size()); ++i) {
       const auto& obs = observations[i];
@@ -220,18 +142,15 @@ void TrackerProcessor::AssociateTracks(
       }
 
       bool id_matched = false;
-      if (last_idx >= 0 && last_idx < kTrackDepth) {
-        FusedObject prev_obs = matrix_[last_idx * kTrackWidth + j];
-        if (prev_obs.object.flag == 1) {
-          if (obs.svs_match_id > 0 && obs.svs_match_id == prev_obs.svs_match_id) {
-            id_matched = true;
-          }
-          if (obs.bev_match_id > 0 && obs.bev_match_id == prev_obs.bev_match_id) {
-            id_matched = true;
-          }
-          if (obs.radar_match_id > 0 && obs.radar_match_id == prev_obs.radar_match_id) {
-            id_matched = true;
-          }
+      if (prev_obs.object.flag == 1) {
+        if (obs.svs_match_id > 0 && obs.svs_match_id == prev_obs.svs_match_id) {
+          id_matched = true;
+        }
+        if (obs.bev_match_id > 0 && obs.bev_match_id == prev_obs.bev_match_id) {
+          id_matched = true;
+        }
+        if (obs.radar_match_id > 0 && obs.radar_match_id == prev_obs.radar_match_id) {
+          id_matched = true;
         }
       }
 
@@ -240,7 +159,7 @@ void TrackerProcessor::AssociateTracks(
         continue;
       }
 
-      if (obs.object.type != matrix_[last_idx * kTrackWidth + j].object.type) {
+      if (obs.object.type != prev_obs.object.type) {
         continue;
       }
 
@@ -291,7 +210,37 @@ void TrackerProcessor::UpdateWithAssociated(
 
     for (int32_t j = 0; j < num_t; ++j) {
       if (match_result(i, j) > 0) {
-        UpdateTracksStatus(j, obs);
+        Track& track = tracks_[j];
+        track.GetTrackObject() = obs;
+        track.SetMeasFlag(0);
+        track.SetHistoryFlag(track.GetPreviousIndex(0), 0);
+
+        if (obs.svs_match_id > 0) {
+          track.UpdateSvsCounter(true);
+        } else {
+          track.UpdateSvsCounter(false);
+        }
+
+        if (obs.bev_match_id > 0) {
+          track.UpdateBevCounter(true);
+        } else {
+          track.UpdateBevCounter(false);
+        }
+
+        if (obs.radar_match_id > 0) {
+          track.UpdateRadarCounter(true);
+        } else {
+          track.UpdateRadarCounter(false);
+        }
+
+        if (obs.bev_match_id > 0 && obs.svs_match_id > 0) {
+          track.GetStatus().cnt_fused = std::max(0, track.GetStatus().cnt_fused) + 1;
+        }
+
+        track.GetStatus().cnt++;
+        track.GetStatus().lst = std::max(0, track.GetStatus().lst - 1);
+        track.SetFlag(1);
+
         meas_assoc_flag[i] = 1;
         trs_assoc_flag[j] = 1;
         break;
@@ -300,15 +249,16 @@ void TrackerProcessor::UpdateWithAssociated(
   }
 
   for (int32_t j = 0; j < num_t; ++j) {
-    CheckStability(j);
+    tracks_[j].CheckStability();
   }
 
   for (int32_t i = 0; i < num_t; ++i) {
-    if (status_[i].used && status_[i].flag) {
-      FusedObject lastest_obs = GetTrackObject(i);
+    Track& track = tracks_[i];
+    if (track.IsUsed() && track.GetFlag()) {
+      FusedObject latest_obs = track.GetTrackObject();
 
-      uint64_t last_time = status_[i].last_tracking_time;
-      int32_t time_diff = static_cast<int32_t>(lastest_obs.object.timestamp - last_time);
+      uint64_t last_time = track.GetLastTrackingTime();
+      int32_t time_diff = static_cast<int32_t>(latest_obs.object.timestamp - last_time);
       float dt = static_cast<float>(time_diff) / 1000.0f;
       if (dt <= 0.0f) {
         dt = kTimeDiffMin;
@@ -317,42 +267,40 @@ void TrackerProcessor::UpdateWithAssociated(
         dt = kTimeDiffMax;
       }
 
-      kalman_filters_[i].Update(
-          lastest_obs.object.x, lastest_obs.object.y,
-          lastest_obs.object.vx, lastest_obs.object.vy,
-          lastest_obs.object.type);
+      track.Update(latest_obs);
 
       float est_x = 0.0f, est_y = 0.0f, est_vx = 0.0f, est_vy = 0.0f;
-      kalman_filters_[i].GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
+      track.GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
 
-      if (std::abs(lastest_obs.object.vx) < kVelocityThreshold &&
-          std::abs(lastest_obs.object.vy) < kVelocityThreshold) {
+      if (std::abs(latest_obs.object.vx) < kVelocityThreshold &&
+          std::abs(latest_obs.object.vy) < kVelocityThreshold) {
         est_vx = 0.0f;
         est_vy = 0.0f;
       }
 
-      estimated_[i].object.x = est_x;
-      estimated_[i].object.y = est_y;
-      estimated_[i].object.vx = est_vx;
-      estimated_[i].object.vy = est_vy;
-      estimated_[i].state = status_[i].state;
+      FusedObject estimated = track.GetEstimated();
+      estimated.object.x = est_x;
+      estimated.object.y = est_y;
+      estimated.object.vx = est_vx;
+      estimated.object.vy = est_vy;
+      estimated.state = track.GetState();
+      track.SetEstimated(estimated);
 
-      status_[i].last_tracking_time = lastest_obs.object.timestamp;
+      track.SetLastTrackingTime(latest_obs.object.timestamp);
     }
   }
 }
 
 void TrackerProcessor::UpdateWithoutAssociated(uint64_t meas_time) {
   for (int32_t j = 0; j < kTrackWidth; ++j) {
-    if (status_[j].used == 1 && status_[j].flag == 0) {
-      FusedObject lastest_obs = GetTrackObject(j);
+    Track& track = tracks_[j];
+    if (track.IsUsed() && track.GetFlag() == 0) {
+      FusedObject latest_obs = track.GetTrackObject();
 
-      int32_t prev_idx = GetPreviousIndex(1);
-      if (prev_idx >= 0 && prev_idx < kTrackDepth) {
-        lastest_obs = matrix_[prev_idx * kTrackWidth + j];
-      }
+      int32_t prev_idx = track.GetPreviousIndex(1);
+      latest_obs = track.GetHistoryObject(prev_idx);
 
-      int32_t time_diff = static_cast<int32_t>(meas_time - status_[j].last_tracking_time);
+      int32_t time_diff = static_cast<int32_t>(meas_time - track.GetLastTrackingTime());
       float dt = static_cast<float>(time_diff) / 1000.0f;
       if (dt <= 0.0f) {
         dt = kTimeDiffMin;
@@ -361,95 +309,30 @@ void TrackerProcessor::UpdateWithoutAssociated(uint64_t meas_time) {
         dt = kTimeDiffMax;
       }
 
-      kalman_filters_[j].Predict(dt);
+      track.Predict(dt);
 
       float est_x = 0.0f, est_y = 0.0f, est_vx = 0.0f, est_vy = 0.0f;
-      kalman_filters_[j].GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
+      track.GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
 
-      if (std::abs(lastest_obs.object.vx) < kVelocityThreshold &&
-          std::abs(lastest_obs.object.vy) < kVelocityThreshold) {
+      if (std::abs(latest_obs.object.vx) < kVelocityThreshold &&
+          std::abs(latest_obs.object.vy) < kVelocityThreshold) {
         est_vx = 0.0f;
         est_vy = 0.0f;
       }
 
-      lastest_obs.object.x = est_x;
-      lastest_obs.object.y = est_y;
-      lastest_obs.object.vx = est_vx;
-      lastest_obs.object.vy = est_vy;
+      latest_obs.object.x = est_x;
+      latest_obs.object.y = est_y;
+      latest_obs.object.vx = est_vx;
+      latest_obs.object.vy = est_vy;
 
-      estimated_[j] = lastest_obs;
-      GetTrackObject(j) = lastest_obs;
+      track.SetEstimated(latest_obs);
+      track.GetTrackObject() = latest_obs;
 
-      status_[j].last_tracking_time = meas_time;
-      meas_flags_[j] = 1;
-      status_[j].flag = 1;
+      track.SetLastTrackingTime(meas_time);
+      track.SetMeasFlag(1);
+      track.SetFlag(1);
     }
   }
-}
-
-void TrackerProcessor::CheckStability(int32_t track_idx) {
-  if (track_idx < 0 || track_idx >= kTrackWidth) {
-    return;
-  }
-
-  TrackState state = TrackState::kUntracking;
-  if (status_[track_idx].cnt > 0) {
-    if (status_[track_idx].cnt < kThresStable) {
-      if (status_[track_idx].cnt < 3) {
-        state = TrackState::kInitial;
-      } else {
-        state = TrackState::kGrowing;
-      }
-    } else if (status_[track_idx].lst >= kThresUnstable) {
-      state = TrackState::kUnstable;
-    } else {
-      state = TrackState::kStable;
-    }
-  }
-  status_[track_idx].state = state;
-}
-
-void TrackerProcessor::UpdateTracksStatus(int32_t trs_id,
-                                            const FusedObject& raw_meas) {
-  if (trs_id < 0 || trs_id >= kTrackWidth) {
-    return;
-  }
-  if (raw_meas.object.flag == 0) {
-    return;
-  }
-
-  GetTrackObject(trs_id) = raw_meas;
-  meas_flags_[trs_id] = 0;
-  lst_flg_[(cursor_ - 1) * kTrackWidth + trs_id] = 0;
-
-  if (raw_meas.svs_match_id > 0) {
-    UpdateCounter(&status_[trs_id].cnt_svs, &status_[trs_id].lst_svs, true);
-  } else {
-    UpdateCounter(&status_[trs_id].cnt_svs, &status_[trs_id].lst_svs, false);
-  }
-
-  if (raw_meas.bev_match_id > 0) {
-    UpdateCounter(&status_[trs_id].cnt_bev, &status_[trs_id].lst_bev, true);
-  } else {
-    UpdateCounter(&status_[trs_id].cnt_bev, &status_[trs_id].lst_bev, false);
-  }
-
-  if (raw_meas.radar_match_id > 0) {
-    UpdateCounter(&status_[trs_id].cnt_radar, &status_[trs_id].lst_radar, true);
-  } else {
-    UpdateCounter(&status_[trs_id].cnt_radar, &status_[trs_id].lst_radar, false);
-  }
-
-  if (raw_meas.bev_match_id > 0 && raw_meas.svs_match_id > 0) {
-    status_[trs_id].cnt_fused = std::max(0, status_[trs_id].cnt_fused) + 1;
-  }
-
-  if (status_[trs_id].cnt_fused >= kThresIdAssign && raw_meas.svs_match_id > 0) {
-    status_[trs_id].fused_type = raw_meas.object.type;
-  }
-
-  UpdateCounter(&status_[trs_id].cnt, &status_[trs_id].lst, true);
-  status_[trs_id].flag = 1;
 }
 
 void TrackerProcessor::CreateNewTracks(
@@ -459,13 +342,13 @@ void TrackerProcessor::CreateNewTracks(
     if (obs_idx < meas_valid_flag.size() && meas_valid_flag[obs_idx] == 0 &&
         observations[obs_idx].object.flag) {
       int32_t slot_idx = FindEmptyTrackSlot();
-      if (slot_idx > 0 && slot_idx < kTrackWidth) {
-        InitializeTrack(slot_idx, observations[obs_idx]);
+      if (slot_idx >= 0 && slot_idx < kTrackWidth) {
+        tracks_[slot_idx].Initialize(observations[obs_idx]);
       } else {
         int32_t replace_idx = FindReplaceableTrack(observations[obs_idx]);
-        if (replace_idx != 255) {
-          ResetTrack(replace_idx);
-          InitializeTrack(replace_idx, observations[obs_idx]);
+        if (replace_idx != -1) {
+          tracks_[replace_idx].Reset();
+          tracks_[replace_idx].Initialize(observations[obs_idx]);
         }
       }
     }
@@ -474,30 +357,33 @@ void TrackerProcessor::CreateNewTracks(
 
 int32_t TrackerProcessor::FindEmptyTrackSlot() const {
   for (int32_t i = 0; i < kTrackWidth; ++i) {
-    if (status_[i].used == 0) {
+    if (!tracks_[i].IsUsed()) {
       return i;
     }
   }
-  return 255;
+  return -1;
 }
 
 int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
   float max_dist_x = 0.0f;
   float max_dist_y = 2.5f;
-  int32_t replace_idx = 255;
+  int32_t replace_idx = -1;
 
   for (int32_t idx = 0; idx < kTrackWidth; ++idx) {
+    const Track& track = tracks_[idx];
     FusedObject track_pos;
-    if (status_[idx].flag) {
-      track_pos = matrix_[(cursor_ - 1) * kTrackWidth + idx];
+    if (track.GetFlag()) {
+      track_pos = track.GetTrackObject();
     } else {
-      int32_t prev_idx = GetPreviousIndex(1);
-      if (prev_idx >= 0 && prev_idx < kTrackDepth) {
-        track_pos = matrix_[prev_idx * kTrackWidth + idx];
-      }
+      int32_t prev_idx = track.GetPreviousIndex(1);
+      track_pos = track.GetHistoryObject(prev_idx);
     }
 
-    if (IsTrackReplaceable(idx) &&
+    ObjDetProp det_prop = track.GetEstimated().obj_det_prop;
+    bool is_replaceable = !(det_prop == ObjDetProp::kSoleRadar ||
+                            det_prop == ObjDetProp::kFused);
+
+    if (is_replaceable &&
         (std::abs(track_pos.object.x) > max_dist_x ||
          std::abs(track_pos.object.y) > max_dist_y)) {
       if (std::abs(track_pos.object.x) > max_dist_x) {
@@ -513,128 +399,89 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
   bool should_replace =
       (std::abs(obs.object.x) < max_dist_x) || (std::abs(obs.object.y) < max_dist_y);
   if (!should_replace) {
-    return 255;
+    return -1;
   }
   return replace_idx;
 }
 
-void TrackerProcessor::InitializeTrack(int32_t slot_idx,
-                                        const FusedObject& obs) {
-  if (slot_idx < 0 || slot_idx >= kTrackWidth) {
-    return;
-  }
-
-  GetTrackObject(slot_idx) = obs;
-
-  status_[slot_idx].used = 1;
-  status_[slot_idx].flag = 1;
-  status_[slot_idx].cnt = 1;
-  status_[slot_idx].lst = 0;
-
-  if (obs.svs_match_id > 0) {
-    status_[slot_idx].cnt_svs = 1;
-    status_[slot_idx].lst_svs = 0;
-  }
-  if (obs.bev_match_id > 0) {
-    status_[slot_idx].cnt_bev = 1;
-    status_[slot_idx].lst_bev = 0;
-  }
-  if (obs.radar_match_id > 0) {
-    status_[slot_idx].cnt_radar = 1;
-    status_[slot_idx].lst_radar = 0;
-  }
-
-  kalman_filters_[slot_idx].Init(
-      obs.object.x, obs.object.y, obs.object.vx, obs.object.vy,
-      obs.object.type);
-
-  estimated_[slot_idx].object.x = obs.object.x;
-  estimated_[slot_idx].object.y = obs.object.y;
-  estimated_[slot_idx].object.vx = obs.object.vx;
-  estimated_[slot_idx].object.vy = obs.object.vy;
-  estimated_[slot_idx].state = status_[slot_idx].state;
-
-  status_[slot_idx].last_tracking_time = obs.object.timestamp;
-}
-
 void TrackerProcessor::RemoveLostTrack() {
   for (int32_t i = 0; i < kTrackWidth; ++i) {
+    Track& track = tracks_[i];
     bool dynamic_flag = false;
-    float vx = estimated_[i].object.vx;
-    float vy = estimated_[i].object.vy;
+    float vx = track.GetEstimated().object.vx;
+    float vy = track.GetEstimated().object.vy;
 
-    if (vx < 1.0f && status_[i].lst >= kThresLost) {
+    if (vx < 1.0f && track.GetStatus().lst >= kThresLost) {
       dynamic_flag = true;
     }
 
-    bool lost_cnt_flag = (status_[i].cnt < status_[i].lst);
+    bool lost_cnt_flag = (track.GetStatus().cnt < track.GetStatus().lst);
 
-    if (status_[i].used == 1 && (dynamic_flag || lost_cnt_flag)) {
-      ResetTrack(i);
+    if (track.IsUsed() && (dynamic_flag || lost_cnt_flag)) {
+      track.Reset();
     }
   }
 }
 
 void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
-                                                  std::vector<bool>* is_fill) {
+                                                std::vector<bool>* is_fill) {
   if (is_fill == nullptr) {
     return;
   }
   is_fill->assign(kTrackWidth, false);
 
   for (int32_t i = 0; i < kTrackWidth; ++i) {
-    output_[i] = FusedObject();
+    Track& track = tracks_[i];
+    track.SetOutput(FusedObject());
 
-    if (status_[i].used) {
+    if (track.IsUsed()) {
       FusedObject lastest_obs;
-      if (status_[i].flag) {
-        lastest_obs = GetTrackObject(i);
+      if (track.GetFlag()) {
+        lastest_obs = track.GetTrackObject();
       } else {
-        int32_t prev_idx = GetPreviousIndex(1);
-        if (prev_idx >= 0 && prev_idx < kTrackDepth) {
-          lastest_obs = matrix_[prev_idx * kTrackWidth + i];
-        }
+        int32_t prev_idx = track.GetPreviousIndex(1);
+        lastest_obs = track.GetHistoryObject(prev_idx);
       }
 
-      bool cnt_flag = (status_[i].cnt > kThresOutput);
+      bool cnt_flag = (track.GetStatus().cnt > kThresOutput);
 
-      if (true) {
-        output_[i].object.x = estimated_[i].object.x;
-        output_[i].object.y = estimated_[i].object.y;
+      FusedObject out;
+      out.object.x = track.GetEstimated().object.x;
+      out.object.y = track.GetEstimated().object.y;
 
-        if (status_[i].cnt > 50) {
-          output_[i].object.vx = estimated_[i].object.vx;
-        } else {
-          output_[i].object.vx = 0.0f;
-        }
-        output_[i].object.vy = estimated_[i].object.vy;
-
-        output_[i].state = status_[i].state;
-        output_[i].object.type = lastest_obs.object.type;
-        output_[i].object.yaw = lastest_obs.object.yaw;
-        output_[i].object.length = lastest_obs.object.length;
-        output_[i].object.width = lastest_obs.object.width;
-        output_[i].object.height = lastest_obs.object.height;
-        output_[i].obj_det_prop = lastest_obs.obj_det_prop;
-        output_[i].svs_match_id = lastest_obs.svs_match_id;
-        output_[i].bev_match_id = lastest_obs.bev_match_id;
-        output_[i].radar_match_id = lastest_obs.radar_match_id;
-        output_[i].object.motion_status = lastest_obs.object.motion_status;
-
-        if (cnt_flag) {
-          (*is_fill)[i] = true;
-        }
+      if (track.GetStatus().cnt > 50) {
+        out.object.vx = track.GetEstimated().object.vx;
+      } else {
+        out.object.vx = 0.0f;
       }
+      out.object.vy = track.GetEstimated().object.vy;
+
+      out.state = track.GetState();
+      out.object.type = lastest_obs.object.type;
+      out.object.yaw = lastest_obs.object.yaw;
+      out.object.length = lastest_obs.object.length;
+      out.object.width = lastest_obs.object.width;
+      out.object.height = lastest_obs.object.height;
+      out.obj_det_prop = lastest_obs.obj_det_prop;
+      out.svs_match_id = lastest_obs.svs_match_id;
+      out.bev_match_id = lastest_obs.bev_match_id;
+      out.radar_match_id = lastest_obs.radar_match_id;
+      out.object.motion_status = lastest_obs.object.motion_status;
+
+      if (cnt_flag) {
+        (*is_fill)[i] = true;
+      }
+
+      track.SetOutput(out);
     }
-    status_[i].flag = 0;
+    track.SetFlag(0);
   }
 
-  cursor_ = GetNextCursor();
-  track_cnt_ = track_cnt_ + 1;
+  track_cnt_++;
 }
 
 void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
-                                     std::vector<FusedObject>* output) {
+                                   std::vector<FusedObject>* output) {
   if (output == nullptr) {
     return;
   }
@@ -644,23 +491,24 @@ void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
   for (int32_t ii = 0; ii < kTrackWidth && ii < kMaxOutputTracks; ++ii) {
     if (is_fill[ii]) {
       if (idx_f < kMaxOutputTracks) {
+        const FusedObject& out = tracks_[ii].GetOutput();
         FusedObject obj;
         obj.object.id = static_cast<uint8_t>(ii);
-        obj.svs_match_id = output_[ii].svs_match_id;
-        obj.bev_match_id = output_[ii].bev_match_id;
-        obj.object.x = output_[ii].object.x;
-        obj.object.y = output_[ii].object.y;
-        obj.object.vx = output_[ii].object.vx;
-        obj.object.vy = output_[ii].object.vy;
-        obj.object.yaw = output_[ii].object.yaw;
-        obj.object.length = output_[ii].object.length;
-        obj.object.height = output_[ii].object.height;
-        obj.object.width = output_[ii].object.width;
-        obj.object.type = output_[ii].object.type;
-        obj.state = output_[ii].state;
-        obj.object.ay = output_[ii].object.ay;
-        obj.object.motion_status = output_[ii].object.motion_status;
-        obj.obj_det_prop = output_[ii].obj_det_prop;
+        obj.svs_match_id = out.svs_match_id;
+        obj.bev_match_id = out.bev_match_id;
+        obj.object.x = out.object.x;
+        obj.object.y = out.object.y;
+        obj.object.vx = out.object.vx;
+        obj.object.vy = out.object.vy;
+        obj.object.yaw = out.object.yaw;
+        obj.object.length = out.object.length;
+        obj.object.height = out.object.height;
+        obj.object.width = out.object.width;
+        obj.object.type = out.object.type;
+        obj.state = out.state;
+        obj.object.ay = out.object.ay;
+        obj.object.motion_status = out.object.motion_status;
+        obj.obj_det_prop = out.obj_det_prop;
         obj.object.flag = 1;
         output->push_back(obj);
         idx_f++;
@@ -673,7 +521,10 @@ void TrackerProcessor::GetResults(std::vector<FusedObject>* results) const {
   if (results == nullptr) {
     return;
   }
-  *results = output_;
+  results->clear();
+  for (int32_t i = 0; i < kTrackWidth; ++i) {
+    results->push_back(tracks_[i].GetOutput());
+  }
 }
 
 }  // namespace fusion

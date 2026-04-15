@@ -24,24 +24,26 @@ class OdFusionComponent {
 
   void Process(const FrameData& frame_data, uint64_t meas_time);
 
-  void ProcessSvsFrame(const SvsFrame& svs_frame, const GlobalPose& svs_pose);
-
-  void ProcessBevFrame(const BevFrame& bev_frame,
-                       const GlobalPose& bev_pose,
-                       float veh_head_rear_wheel);
-
-  void ProcessRadarFrame(const RadarFrame& radar_frame,
-                         const GlobalPose& radar_pose,
-                         float veh_spd);
-
   void GetFusionResults(std::vector<FusedObject>* results);
 
  private:
-  FusedObject ConvertSvsObject(const SvsObject& svs_obj);
+  void ProcessSvs(const SvsFrame& svs_frame, const GlobalPose& svs_pose);
 
-  FusedObject ConvertBevObject(const BevObject& bev_obj, float veh_head_rear_wheel);
+  void ProcessBev(const BevFrame& bev_frame,
+                  const GlobalPose& bev_pose,
+                  float veh_head_rear_wheel);
 
-  FusedObject ConvertRadarObject(const RadarObject& radar_obj, float veh_spd);
+  void ProcessRadar(const RadarFrame& radar_frame,
+                    const GlobalPose& radar_pose,
+                    float veh_spd);
+
+  std::vector<FusedObject> ConvertSvsToObservations(const SvsFrame& svs_frame);
+
+  std::vector<FusedObject> ConvertBevToObservations(const BevFrame& bev_frame,
+                                                     float veh_head_rear_wheel);
+
+  std::vector<FusedObject> ConvertRadarToObservations(const RadarFrame& radar_frame,
+                                                      float veh_spd);
 
   Config config_;
   int32_t fusion_counter_;

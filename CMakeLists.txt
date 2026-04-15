@@ -22,6 +22,7 @@ add_executable(${PROJECT_NAME}_node
   src/applications/od_fusion_component.cc
   src/lib/tracker_processor.cc
   src/lib/cv_kalman_filter.cc
+  src/lib/track.cc
   src/lib/hungarian.cc
 )
 
@@ -35,6 +36,7 @@ ament_add_gtest(test_od_fusion
   src/applications/od_fusion_component.cc
   src/lib/tracker_processor.cc
   src/lib/cv_kalman_filter.cc
+  src/lib/track.cc
   src/lib/hungarian.cc
 )
 

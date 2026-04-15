@@ -38,7 +38,7 @@ FusionNode::FusionNode(const OdFusionComponent::Config& config)
 void FusionNode::TimerCallback() {
   frame_count_++;
 
-  SvsFrame svs_frame;
+  FrameData frame_data;
   GlobalPose svs_pose;
 
   svs_pose.time_stamp = static_cast<uint64_t>(frame_count_) * 50 * 1000000;
@@ -49,6 +49,7 @@ void FusionNode::TimerCallback() {
   svs_pose.pitch = 0.0f;
   svs_pose.roll = 0.0f;
 
+  SvsFrame svs_frame;
   svs_frame.time_ns = svs_pose.time_stamp;
 
   const int32_t kObjectsPerFrame = 3;
@@ -77,7 +78,11 @@ void FusionNode::TimerCallback() {
     svs_frame.svs_object_list.push_back(svs_obj);
   }
 
-  fusion_component_.ProcessSvsFrame(svs_frame, svs_pose);
+  frame_data.svs_frame = svs_frame;
+  frame_data.svs_pose = svs_pose;
+
+  uint64_t meas_time = svs_pose.time_stamp;
+  fusion_component_.Process(frame_data, meas_time);
 
   std::vector<FusedObject> results;
   fusion_component_.GetFusionResults(&results);

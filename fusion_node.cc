@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include "od_fusion/applications/od_fusion_component.h"
+#include "od_fusion/lib/rviz_display.h"
 
 namespace perception {
 namespace fusion {
@@ -13,6 +14,7 @@ class FusionNode : public rclcpp::Node {
   void TimerCallback();
 
   OdFusionComponent fusion_component_;
+  std::unique_ptr<RvizDisplay> rviz_display_;
   rclcpp::TimerBase::SharedPtr timer_;
   int32_t frame_count_;
 };
@@ -25,6 +27,10 @@ FusionNode::FusionNode(const OdFusionComponent::Config& config)
     RCLCPP_ERROR(this->get_logger(), "Failed to init fusion component");
     return;
   }
+
+  rviz_display_ = std::make_unique<RvizDisplay>(
+      std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*) {}),
+      "/od_fusion/visualization");
 
   constexpr int32_t kTimerPeriodMs = 50;
   auto timer_period = std::chrono::milliseconds(kTimerPeriodMs);
@@ -86,6 +92,11 @@ void FusionNode::TimerCallback() {
 
   std::vector<FusedObject> results;
   fusion_component_.GetFusionResults(&results);
+
+  // Publish visualization
+  if (rviz_display_) {
+    rviz_display_->PublishAll(frame_data, results);
+  }
 
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                        "Frame %d: processed %zu objects, output %zu tracks",

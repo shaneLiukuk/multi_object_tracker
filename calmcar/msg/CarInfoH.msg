@@ -1,8 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_can
-SteeringInfo steering
-BrakeInfo brake
-VehicleSpeedInfo vehicle_speed
-ThrottleInfo throttle
-AutoGearInfo gear
-EPBInfo epb

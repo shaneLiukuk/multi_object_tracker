@@ -1,2 +1,0 @@
-CPoint position
-CQuaternion orientation

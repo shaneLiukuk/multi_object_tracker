@@ -1,4 +1,0 @@
-uint32 cur_location_time_stamp
-int32 cur_location_coordinate_x
-int32 cur_location_coordinate_y
-int16 cur_location_coordinate_number

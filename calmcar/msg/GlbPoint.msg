@@ -1,2 +1,0 @@
-float32 positionxsen
-float32 positionysen

@@ -1,4 +1,0 @@
-CHeader header
-string child_frame_id
-CPoseWithCovariance pose
-CTwistWithCovariance twist

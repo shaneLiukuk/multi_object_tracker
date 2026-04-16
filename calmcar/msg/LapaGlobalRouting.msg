@@ -1,1 +1,0 @@
-LapaGlobalRoutingPointStruct[5000] lapa_global_routing_array

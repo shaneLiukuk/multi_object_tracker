@@ -1,9 +1,0 @@
-uint64 timestamp
-uint32 slot_id_to_avp
-uint8 map_name_to_avp
-uint8 floor_id
-SlotPointToAvp[4] slotpointssen
-uint16 reserve_avp1
-uint16 reserve_avp2
-float32 reserve_avp3
-float32 reserve_avp4

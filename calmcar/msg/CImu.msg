@@ -1,7 +1,0 @@
-CHeader header
-CQuaternion orientation
-float64[9] orientation_covariance
-CVector3 angular_velocity
-float64[9] angular_velocity_covariance
-CVector3 linear_acceleration
-float64[9] linear_acceleration_covariance

@@ -50,6 +50,7 @@ void TrackerProcessor::Reset() {
     tracks_[i].Reset();
   }
   track_cnt_ = 0;
+  Track::ResetTrackIdCounter();
 }
 
 void TrackerProcessor::Process(
@@ -68,9 +69,9 @@ void TrackerProcessor::Process(
   Eigen::MatrixXi match_result;
   AssociateTracks(observations, meas_time, &match_result);
 
-  UpdateWithAssociated(observations, match_result, glb);
+  UpdateWithAssociated(observations, match_result, glb, sensor_type, meas_time);
 
-  UpdateWithoutAssociated(meas_time);
+  UpdateWithoutAssociated(sensor_type, meas_time);
 
   if (sensor_type == SensorType::kSvs) {
     std::vector<uint8_t> meas_valid(kMaxObsFuse, 0);
@@ -79,6 +80,8 @@ void TrackerProcessor::Process(
     }
     CreateNewTracks(observations, meas_valid);
   }
+
+  RemoveLostTrack();
 
   std::vector<bool> is_fill;
   UpdateMotSupplementState(meas_time, &is_fill);
@@ -192,7 +195,9 @@ void TrackerProcessor::AssociateTracks(
 void TrackerProcessor::UpdateWithAssociated(
     const std::vector<FusedObject>& observations,
     const Eigen::MatrixXi& match_result,
-    const GlobalPose& glb) {
+    const GlobalPose& glb,
+    SensorType sensor_type,
+    uint64_t meas_time) {
   const int32_t num_m = kMaxObsFuse;
   const int32_t num_t = kTrackWidth;
 
@@ -217,18 +222,21 @@ void TrackerProcessor::UpdateWithAssociated(
 
         if (obs.svs_match_id > 0) {
           track.UpdateSvsCounter(true);
+          track.SetInvisibilityPeriod(SensorType::kSvs, 0.0);
         } else {
           track.UpdateSvsCounter(false);
         }
 
         if (obs.bev_match_id > 0) {
           track.UpdateBevCounter(true);
+          track.SetInvisibilityPeriod(SensorType::kBev, 0.0);
         } else {
           track.UpdateBevCounter(false);
         }
 
         if (obs.radar_match_id > 0) {
           track.UpdateRadarCounter(true);
+          track.SetInvisibilityPeriod(SensorType::kRadar, 0.0);
         } else {
           track.UpdateRadarCounter(false);
         }
@@ -240,6 +248,13 @@ void TrackerProcessor::UpdateWithAssociated(
         track.GetStatus().cnt++;
         track.GetStatus().lst = std::max(0, track.GetStatus().lst - 1);
         track.SetFlag(1);
+
+        // Update prediction state - track received measurement
+        track.ResetPredictionTime();
+        track.SetPredicted(false);
+
+        // Update alive status
+        track.SetAlive(true);
 
         meas_assoc_flag[i] = 1;
         trs_assoc_flag[j] = 1;
@@ -291,7 +306,7 @@ void TrackerProcessor::UpdateWithAssociated(
   }
 }
 
-void TrackerProcessor::UpdateWithoutAssociated(uint64_t meas_time) {
+void TrackerProcessor::UpdateWithoutAssociated(SensorType sensor_type, uint64_t meas_time) {
   for (int32_t j = 0; j < kTrackWidth; ++j) {
     Track& track = tracks_[j];
     if (track.IsUsed() && track.GetFlag() == 0) {
@@ -331,6 +346,9 @@ void TrackerProcessor::UpdateWithoutAssociated(uint64_t meas_time) {
       track.SetLastTrackingTime(meas_time);
       track.SetMeasFlag(1);
       track.SetFlag(1);
+
+      // Update sensor invisibility - this sensor didn't provide measurement
+      track.UpdateWithoutSensorObject(sensor_type, meas_time);
     }
   }
 }
@@ -417,7 +435,10 @@ void TrackerProcessor::RemoveLostTrack() {
 
     bool lost_cnt_flag = (track.GetStatus().cnt < track.GetStatus().lst);
 
-    if (track.IsUsed() && (dynamic_flag || lost_cnt_flag)) {
+    // Check if track is alive based on sensor visibility
+    bool any_visible = track.IsSvsVisible() || track.IsBevVisible() || track.IsRadarVisible();
+
+    if (track.IsUsed() && (dynamic_flag || lost_cnt_flag || !any_visible)) {
       track.Reset();
     }
   }
@@ -445,36 +466,38 @@ void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
 
       bool cnt_flag = (track.GetStatus().cnt > kThresOutput);
 
-      FusedObject out;
-      out.object.x = track.GetEstimated().object.x;
-      out.object.y = track.GetEstimated().object.y;
+      // Only output tracks that are alive and have reached output threshold
+      if (track.IsAlive() && cnt_flag) {
+        FusedObject out;
+        out.object.id = static_cast<uint8_t>(track.GetId());
+        out.object.x = track.GetEstimated().object.x;
+        out.object.y = track.GetEstimated().object.y;
 
-      if (track.GetStatus().cnt > 50) {
-        out.object.vx = track.GetEstimated().object.vx;
-      } else {
-        out.object.vx = 0.0f;
-      }
-      out.object.vy = track.GetEstimated().object.vy;
+        if (track.GetStatus().cnt > 50) {
+          out.object.vx = track.GetEstimated().object.vx;
+        } else {
+          out.object.vx = 0.0f;
+        }
+        out.object.vy = track.GetEstimated().object.vy;
 
-      out.state = track.GetState();
-      out.object.type = lastest_obs.object.type;
-      out.object.yaw = lastest_obs.object.yaw;
-      out.object.length = lastest_obs.object.length;
-      out.object.width = lastest_obs.object.width;
-      out.object.height = lastest_obs.object.height;
-      out.obj_det_prop = lastest_obs.obj_det_prop;
-      out.svs_match_id = lastest_obs.svs_match_id;
-      out.bev_match_id = lastest_obs.bev_match_id;
-      out.radar_match_id = lastest_obs.radar_match_id;
-      out.object.motion_status = lastest_obs.object.motion_status;
+        out.state = track.GetState();
+        out.object.type = lastest_obs.object.type;
+        out.object.yaw = lastest_obs.object.yaw;
+        out.object.length = lastest_obs.object.length;
+        out.object.width = lastest_obs.object.width;
+        out.object.height = lastest_obs.object.height;
+        out.obj_det_prop = lastest_obs.obj_det_prop;
+        out.svs_match_id = lastest_obs.svs_match_id;
+        out.bev_match_id = lastest_obs.bev_match_id;
+        out.radar_match_id = lastest_obs.radar_match_id;
+        out.object.motion_status = lastest_obs.object.motion_status;
 
-      if (cnt_flag) {
         (*is_fill)[i] = true;
+        track.SetOutput(out);
       }
-
-      track.SetOutput(out);
     }
     track.SetFlag(0);
+    track.SetCursorNext();
   }
 
   track_cnt_++;
@@ -493,7 +516,7 @@ void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
       if (idx_f < kMaxOutputTracks) {
         const FusedObject& out = tracks_[ii].GetOutput();
         FusedObject obj;
-        obj.object.id = static_cast<uint8_t>(ii);
+        obj.object.id = static_cast<uint8_t>(tracks_[ii].GetId());
         obj.svs_match_id = out.svs_match_id;
         obj.bev_match_id = out.bev_match_id;
         obj.object.x = out.object.x;
@@ -523,7 +546,9 @@ void TrackerProcessor::GetResults(std::vector<FusedObject>* results) const {
   }
   results->clear();
   for (int32_t i = 0; i < kTrackWidth; ++i) {
-    results->push_back(tracks_[i].GetOutput());
+    if (tracks_[i].IsUsed()) {
+      results->push_back(tracks_[i].GetOutput());
+    }
   }
 }
 

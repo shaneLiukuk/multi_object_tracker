@@ -1,5 +1,0 @@
-int32 lapa_global_routing_point_x
-int32 lapa_global_routing_point_y
-uint16 lapa_global_routing_point_number
-float32 yaw_angle
-uint16 valid_way_points_number

@@ -1,1 +1,0 @@
-ApaRoutingPointStruct[100] apa_routing_point

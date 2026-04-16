@@ -1,5 +1,0 @@
-uint32 roadmarkidsen
-uint8 roadmarktypesen
-float32 centerpositionxsen
-float32 centerpositionysen
-float32 odomheadingsen

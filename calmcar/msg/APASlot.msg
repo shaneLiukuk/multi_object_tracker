@@ -1,7 +1,0 @@
-uint32 slotidsen
-uint8 slotstatussen
-uint8 slottypesen
-VehiclePointMap slotpointssen
-VehiclePointMap blockpointssen
-uint8 slotselectbuttonsen
-uint8 slot_status

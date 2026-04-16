@@ -1,2 +1,0 @@
-CVector3 translation
-CQuaternion rotation

@@ -1,8 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_can
-uint8 m_iuss_state_obs
-uint8 need_replan_stop
-uint8 plan_trigger
-uint8 control_enable
-uint8 control_status
-uint8 apa_run_state

@@ -1,8 +1,0 @@
-float64 strg_whl_ang
-uint16 strg_whl_ang_grd
-int8 strg_whl_ang_v
-int8 strg_whl_ang_snsr_inid
-int8 strg_whl_ang_snsr_flt
-uint8 strg_whl_ang_snsr_cal_sts
-uint8 str_angl_snsr_info_rll_cnt
-uint8 str_angl_snsr_info_chk_sum

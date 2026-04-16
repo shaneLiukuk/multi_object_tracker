@@ -1,4 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_can
-BodyInfo body_info
-TirePressureInfo tire_pressure

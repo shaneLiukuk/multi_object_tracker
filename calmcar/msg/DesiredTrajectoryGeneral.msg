@@ -1,8 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_fusion
-uint8 replan_counter
-uint8 trajectories_cnt
-float32 step_length
-LocationPoint freeze_coordinate
-Trajectory trajectories
-uint8 plan_ok

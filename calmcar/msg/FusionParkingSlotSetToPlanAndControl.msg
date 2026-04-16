@@ -1,4 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_slot
-uint32 frame_index
-FusionParkingSlotToPlanAndControl slot_to_plan_and_control

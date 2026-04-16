@@ -1,6 +1,0 @@
-uint32 apa_routing_point_time_stamp
-uint8 trajectory_point_number
-uint8 apa_routing_point_phase
-int32 apa_routing_point_x
-int32 apa_routing_point_y
-uint8 current_step_direction

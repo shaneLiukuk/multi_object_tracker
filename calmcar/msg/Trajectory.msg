@@ -1,9 +1,0 @@
-float32[300] x
-float32[300] y
-float32[300] z
-float32[300] heading
-float32[300] curve
-float32[300] acc
-float32[300] speed
-uint8 gear
-uint16 points_cnt

@@ -1,9 +1,0 @@
-float64 yaw_rate
-uint8 yaw_rate_snsr_sts
-int8 cal_sts
-float64 longd_acc
-uint8 longt_snsr_sts
-uint8 lat_snsr_sts
-float64 lat_acc
-uint8 yaw_info_rll_cnt
-uint8 yaw_info_chk_sum

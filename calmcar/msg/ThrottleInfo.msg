@@ -1,9 +1,0 @@
-float32 throttle_pedal_output
-float32 torque_output_fr
-float32 torque_output_rr
-uint8 throttle_enable
-uint8 driver_override
-uint8 throttle_error
-uint8 throttle_control_available
-uint64 can_time
-uint64 system_time

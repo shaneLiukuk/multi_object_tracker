@@ -1,9 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_fusion
-uint8 trajectories_cnt
-float32 step_length
-EndPointGlobal end_point
-TrajectoryGlobal trajectories
-SpeedBump speed_bumps
-uint8 plan_ok
-uint8 map_type

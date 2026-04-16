@@ -33,9 +33,11 @@ class TrackerProcessor {
 
   void UpdateWithAssociated(const std::vector<FusedObject>& observations,
                             const Eigen::MatrixXi& match_result,
-                            const GlobalPose& glb);
+                            const GlobalPose& glb,
+                            SensorType sensor_type,
+                            uint64_t meas_time);
 
-  void UpdateWithoutAssociated(uint64_t meas_time);
+  void UpdateWithoutAssociated(SensorType sensor_type, uint64_t meas_time);
 
   void CreateNewTracks(const std::vector<FusedObject>& observations,
                        const std::vector<uint8_t>& meas_valid_flag);

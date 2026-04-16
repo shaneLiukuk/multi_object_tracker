@@ -1,7 +1,0 @@
-uint64 time_stamp
-uint64 time_stamp_can
-ThrottleCommand throttle_command
-SteerCommand steering_command
-BrakeCommand braking_command
-GearCommand gear_command
-EPBCommand epb_command

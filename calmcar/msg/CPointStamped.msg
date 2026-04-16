@@ -1,2 +1,0 @@
-CHeader header
-CPoint point

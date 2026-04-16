@@ -1,3 +1,0 @@
-PathPointLine[300] pathpointssen
-float32 parktrajdistancesen
-float32 parktrajredistancesen

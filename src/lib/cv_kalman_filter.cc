@@ -103,8 +103,8 @@ void CvKalmanFilter::GetEstimate(float* x, float* y, float* vx, float* vy) const
 }
 
 void CvKalmanFilter::Decorrelation() {
-  p_est_.block<1, 4>(0, 2).setZero();
-  p_est_.block<4, 1>(2, 0).setZero();
+  p_est_.block<1, 2>(0, 2).setZero();
+  p_est_.block<2, 1>(2, 0).setZero();
 }
 
 void CvKalmanFilter::CorrectionBreakdown() {

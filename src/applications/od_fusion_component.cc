@@ -12,11 +12,6 @@ constexpr float kSensorRangeYMax = 20.0f;
 constexpr float kSensorRangeXMin = -10.0f;
 constexpr float kSensorRangeXMax = 10.0f;
 
-void CartesianToIso8855(float x, float y, float* iso_x, float* iso_y) {
-  *iso_x = -y;
-  *iso_y = x;
-}
-
 bool IsInValidRange(float x, float y) {
   return (y > kSensorRangeYMin && y < kSensorRangeYMax &&
           x > kSensorRangeXMin && x < kSensorRangeXMax);

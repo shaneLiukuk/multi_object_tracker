@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdint>
 #include <Eigen/Dense>
+#include <iostream>
 #include "od_fusion/base/obstacle_constant.h"
 #include "od_fusion/lib/track.h"
 
@@ -32,15 +33,15 @@ class TrackerProcessor {
                        Eigen::MatrixXi* match_result);
 
   void UpdateWithAssociated(const std::vector<FusedObject>& observations,
-                            const Eigen::MatrixXi& match_result,
-                            const GlobalPose& glb,
-                            SensorType sensor_type,
-                            uint64_t meas_time);
+                            const Eigen::MatrixXi& match_result, const GlobalPose& glb,
+                            SensorType sensor_type, uint64_t meas_time,
+                            std::vector<int32_t>& meas_assoc_flag,
+                            std::vector<int32_t>& trs_assoc_flag);
 
   void UpdateWithoutAssociated(SensorType sensor_type, uint64_t meas_time);
 
   void CreateNewTracks(const std::vector<FusedObject>& observations,
-                       const std::vector<uint8_t>& meas_valid_flag);
+                       const std::vector<int>& meas_valid_flag);
 
   void UpdateMotSupplementState(uint64_t meas_time, std::vector<bool>* is_fill);
 
@@ -55,7 +56,6 @@ class TrackerProcessor {
 
   int32_t track_cnt_;
   std::vector<Track> tracks_;
-  std::vector<uint8_t> meas_flags_;
 };
 
 }  // namespace fusion

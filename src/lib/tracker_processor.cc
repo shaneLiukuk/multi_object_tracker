@@ -32,7 +32,6 @@ bool IsStaticObject(ObjectType type) {
 TrackerProcessor::TrackerProcessor()
     : track_cnt_(0) {
   tracks_.resize(kTrackWidth);
-  meas_flags_.resize(kMaxObsFuse, 0);
   Init();
 }
 
@@ -41,7 +40,6 @@ void TrackerProcessor::Init() {
     tracks_[i].SetId(i);
     tracks_[i].Reset();
   }
-  meas_flags_.assign(kMaxObsFuse, 0);
   track_cnt_ = 0;
 }
 
@@ -64,21 +62,25 @@ void TrackerProcessor::Process(
   }
   output->clear();
 
-  meas_flags_.assign(kMaxObsFuse, 0);
-
   Eigen::MatrixXi match_result;
   AssociateTracks(observations, meas_time, &match_result);
 
-  UpdateWithAssociated(observations, match_result, glb, sensor_type, meas_time);
-
+  // std::cout << "Process:match_result:\n";
+  // for (int i = 0; i < 5 && i < match_result.rows(); ++i) {
+  //     std::cout << match_result.row(i) << "\n";
+  // }
+  std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
+  std::vector<int32_t> trs_assoc_flag(kTrackWidth, 0);
+  UpdateWithAssociated(observations, match_result, glb, sensor_type, meas_time, meas_assoc_flag, trs_assoc_flag);
+    std::cout << "Process::meas_assoc_flag:" << std::endl;
+    for (auto& el : meas_assoc_flag) {
+      std::cout << el << " ";
+    }
+    std::cout << std::endl;
   UpdateWithoutAssociated(sensor_type, meas_time);
 
   if (sensor_type == SensorType::kSvs) {
-    std::vector<uint8_t> meas_valid(kMaxObsFuse, 0);
-    for (size_t i = 0; i < observations.size() && i < kMaxObsFuse; ++i) {
-      meas_valid[i] = (observations[i].object.flag > 0) ? 1 : 0;
-    }
-    CreateNewTracks(observations, meas_valid);
+    CreateNewTracks(observations, meas_assoc_flag);
   }
 
   RemoveLostTrack();
@@ -100,7 +102,7 @@ void TrackerProcessor::AssociateTracks(
     return;
   }
   match_result->setZero(num_m, num_t);
-
+  // judge valid observations and tracks
   bool has_valid_obs = false;
   for (const auto& obs : observations) {
     if (obs.object.flag > 0) {
@@ -111,7 +113,6 @@ void TrackerProcessor::AssociateTracks(
   if (!has_valid_obs) {
     return;
   }
-
   bool has_used_track = false;
   for (const auto& track : tracks_) {
     if (track.IsUsed()) {
@@ -122,7 +123,7 @@ void TrackerProcessor::AssociateTracks(
   if (!has_used_track) {
     return;
   }
-
+  std::cout << "AssociateTracks:2" << std::endl;
   Eigen::MatrixXf cost_matrix = Eigen::MatrixXf::Ones(num_m, num_t) * 10000.0f;
 
   for (int32_t j = 0; j < num_t; ++j) {
@@ -178,7 +179,7 @@ void TrackerProcessor::AssociateTracks(
       }
     }
   }
-
+  std::cout << "AssociateTracks:3" << std::endl;
   Hungarian::Solve(cost_matrix, match_result);
 
   for (int32_t i = 0; i < num_m; ++i) {
@@ -197,12 +198,14 @@ void TrackerProcessor::UpdateWithAssociated(
     const Eigen::MatrixXi& match_result,
     const GlobalPose& glb,
     SensorType sensor_type,
-    uint64_t meas_time) {
+    uint64_t meas_time,
+    std::vector<int32_t>& meas_assoc_flag,
+    std::vector<int32_t>& trs_assoc_flag) {
   const int32_t num_m = kMaxObsFuse;
   const int32_t num_t = kTrackWidth;
 
-  std::vector<int32_t> meas_assoc_flag(num_m, 0);
-  std::vector<int32_t> trs_assoc_flag(num_t, 0);
+  // std::vector<int32_t> meas_assoc_flag(num_m, 0);
+  // std::vector<int32_t> trs_assoc_flag(num_t, 0);
 
   for (int32_t i = 0; i < num_m; ++i) {
     if (i >= static_cast<int32_t>(observations.size())) {
@@ -355,11 +358,12 @@ void TrackerProcessor::UpdateWithoutAssociated(SensorType sensor_type, uint64_t 
 
 void TrackerProcessor::CreateNewTracks(
     const std::vector<FusedObject>& observations,
-    const std::vector<uint8_t>& meas_valid_flag) {
+    const std::vector<int>& meas_valid_flag) {
   for (size_t obs_idx = 0; obs_idx < kMaxObsFuse && obs_idx < observations.size(); ++obs_idx) {
     if (obs_idx < meas_valid_flag.size() && meas_valid_flag[obs_idx] == 0 &&
         observations[obs_idx].object.flag) {
       int32_t slot_idx = FindEmptyTrackSlot();
+      std::cout << "CreateNewTracks:slot_idx:" << slot_idx << std::endl;
       if (slot_idx >= 0 && slot_idx < kTrackWidth) {
         tracks_[slot_idx].Initialize(observations[obs_idx]);
       } else {

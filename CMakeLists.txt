@@ -16,6 +16,7 @@ find_package(Eigen3 REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 include_directories(include)
+include_directories(common)
 include_directories(${EIGEN3_INCLUDE_DIR})
 add_definitions(${EIGEN3_DEFINITIONS})
 

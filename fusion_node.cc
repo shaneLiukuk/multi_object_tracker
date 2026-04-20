@@ -6,6 +6,7 @@
 #include "calmcar/msg/perception_bev_object.hpp"
 #include "calmcar/msg/perception_command.hpp"
 #include "calmcar/msg/global_pose_estimation.hpp"
+#include "Rte_Type.h"
 
 namespace perception {
 namespace fusion {
@@ -16,7 +17,8 @@ static bool g_pose_updated = false;
 static uint8_t g_enable_svs = 0;
 static uint8_t g_enable_bev = 0;
 static uint8_t g_enable_radar = 0;
-
+MultiObjectTrackerInput multi_object_fusion_input{};
+MultiObjectTrackerOutput multi_object_fusion_output{};
 class FusionNode : public rclcpp::Node {
  public:
   explicit FusionNode(const OdFusionComponent::Config& config);
@@ -24,15 +26,10 @@ class FusionNode : public rclcpp::Node {
  private:
   void TimerCallback();
 
-  void SvsCallback(const calmcar::msg::ObjectSet::SharedPtr msg);
+  void SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg);
   void BevCallback(const calmcar::msg::PerceptionBEVObject::SharedPtr msg);
   void PerceptionCommandCallback(const calmcar::msg::PerceptionCommand::SharedPtr msg);
   void GlobalPoseCallback(const calmcar::msg::GlobalPoseEstimation::SharedPtr msg);
-
-  bool QueryNearestLocalization(const double& timestamp, GlobalPose& localization);
-
-  SvsFrame ConvertObjectSetToSvsFrame(const calmcar::msg::ObjectSet& msg);
-  BevFrame ConvertPerceptionBEVToBevFrame(const calmcar::msg::PerceptionBEVObject& msg);
 
   OdFusionComponent fusion_component_;
   std::unique_ptr<RvizDisplay> rviz_display_;
@@ -47,8 +44,6 @@ class FusionNode : public rclcpp::Node {
   BevFrame last_bev_frame_;
   bool svs_updated_;
   bool bev_updated_;
-  std::list<GlobalPose> global_pose_cache_;
-  std::mutex mutex_;
 };
 
 FusionNode::FusionNode(const OdFusionComponent::Config& config)
@@ -98,11 +93,41 @@ FusionNode::FusionNode(const OdFusionComponent::Config& config)
   RCLCPP_INFO(this->get_logger(), "OdFusionNode started with %d ms period", kTimerPeriodMs);
 }
 
-void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr msg) {
+void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg) {
   if (!fusion_component_.GetConfig().enable_svs) {
     return;
   }
-  last_svs_frame_ = ConvertObjectSetToSvsFrame(*msg);
+  ObjectSet obj_set{};
+  obj_set.time_stamp = svs_msg->time_stamp;
+  obj_set.time_stamp_raw = svs_msg->time_stamp_raw;
+  obj_set.frame_index = svs_msg->frame_index;
+  obj_set.object_cnt = sizeof(obj_set.object_set) / sizeof(ObjectInfo);
+  if (svs_msg->object_cnt < obj_set.object_cnt) {
+    obj_set.object_cnt = svs_msg->object_cnt;
+  }
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+                      "Svs Cnt %d",obj_set.object_cnt);
+  for (uint8_t i = 0; i < obj_set.object_cnt; ++i) {
+    obj_set.object_set[i].distance_x = svs_msg->object_set[i].distance_x;
+    obj_set.object_set[i].distance_y = svs_msg->object_set[i].distance_y;
+    obj_set.object_set[i].tracking_id = svs_msg->object_set[i].tracking_id;
+    obj_set.object_set[i].class_id = svs_msg->object_set[i].class_id;
+    obj_set.object_set[i].angle_view = svs_msg->object_set[i].angle_view;
+    obj_set.object_set[i].confidence = svs_msg->object_set[i].confidence;
+    obj_set.object_set[i].width = svs_msg->object_set[i].width;
+    obj_set.object_set[i].height = svs_msg->object_set[i].height;
+    obj_set.object_set[i].length = svs_msg->object_set[i].length;
+    obj_set.object_set[i].yaw = svs_msg->object_set[i].yaw;
+    obj_set.object_set[i].relative_velocity_x = svs_msg->object_set[i].relative_velocity_x;
+    obj_set.object_set[i].relative_velocity_y = svs_msg->object_set[i].relative_velocity_y;
+    obj_set.object_set[i].relative_acceleration_x =
+        svs_msg->object_set[i].relative_acceleration_x;
+    obj_set.object_set[i].motion_status = svs_msg->object_set[i].motion_status;
+    obj_set.object_set[i].valid_status = svs_msg->object_set[i].valid_status;
+    obj_set.object_set[i].target_source = svs_msg->object_set[i].target_source;
+  }
+  std::memcpy(&multi_object_fusion_input.svs_object_in, &obj_set, sizeof(obj_set));
+
   svs_updated_ = true;
 }
 
@@ -111,7 +136,98 @@ void FusionNode::BevCallback(const calmcar::msg::PerceptionBEVObject::SharedPtr 
     return;
   }
 
-  last_bev_frame_ = ConvertPerceptionBEVToBevFrame(*msg);
+  PerceptionBEVObject bev_obj_set{};
+
+  bev_obj_set.timestamp = msg->timestamp;
+  bev_obj_set.vd_count = msg->vd_count;
+  bev_obj_set.vru_count = msg->vru_count;
+  bev_obj_set.num_of_objects = msg->num_of_objects;
+  bev_obj_set.cipv_id = msg->cipv_id;
+  bev_obj_set.vd_niv_left = msg->vd_niv_left;
+  bev_obj_set.vd_niv_right = msg->vd_niv_right;
+  bev_obj_set.cipv_lost = msg->cipv_lost;
+  bev_obj_set.allow_acc = msg->allow_acc;
+
+  for (int i = 0; i < 40; i++) {
+    bev_obj_set.cam_objects[i].timestamp_raw = msg->cam_objects[i].timestamp_raw;
+    bev_obj_set.cam_objects[i].frame_index = msg->cam_objects[i].frame_index;
+    bev_obj_set.cam_objects[i].camera_position = msg->cam_objects[i].camera_position;
+    bev_obj_set.cam_objects[i].id = msg->cam_objects[i].id;
+    bev_obj_set.cam_objects[i].class_a = msg->cam_objects[i].class_a;
+    bev_obj_set.cam_objects[i].class_name = msg->cam_objects[i].class_name;
+    bev_obj_set.cam_objects[i].subclass = msg->cam_objects[i].subclass;
+    bev_obj_set.cam_objects[i].subclass_name = msg->cam_objects[i].subclass_name;
+    bev_obj_set.cam_objects[i].confidence = msg->cam_objects[i].confidence;
+
+    bev_obj_set.cam_objects[i].bbox.x = msg->cam_objects[i].bbox.x;
+    bev_obj_set.cam_objects[i].bbox.y = msg->cam_objects[i].bbox.y;
+    bev_obj_set.cam_objects[i].bbox.width = msg->cam_objects[i].bbox.width;
+    bev_obj_set.cam_objects[i].bbox.height = msg->cam_objects[i].bbox.height;
+
+    // bev_obj_set.cam_objects[i].length = msg->cam_objects[i].length;
+    // bev_obj_set.cam_objects[i].length_std = msg->cam_objects[i].length_std;
+    // bev_obj_set.cam_objects[i].width = msg->cam_objects[i].width;
+    // bev_obj_set.cam_objects[i].width_std = msg->cam_objects[i].width_std;
+    // bev_obj_set.cam_objects[i].height = msg->cam_objects[i].height;
+    // bev_obj_set.cam_objects[i].height_std = msg->cam_objects[i].height_std;
+    // bev_obj_set.cam_objects[i].age_count = msg->cam_objects[i].age_count;
+    // bev_obj_set.cam_objects[i].age_seconds = msg->cam_objects[i].age_seconds;
+    // bev_obj_set.cam_objects[i].visibility_side = msg->cam_objects[i].visibility_side;
+    // bev_obj_set.cam_objects[i].heading = msg->cam_objects[i].heading;
+    // bev_obj_set.cam_objects[i].heading_std = msg->cam_objects[i].heading_std;
+    // bev_obj_set.cam_objects[i].inverse_ttc = msg->cam_objects[i].inverse_ttc;
+    // bev_obj_set.cam_objects[i].inverse_ttc_std = msg->cam_objects[i].inverse_ttc_std;
+    // bev_obj_set.cam_objects[i].angle_left = msg->cam_objects[i].angle_left;
+    // bev_obj_set.cam_objects[i].angle_left_std = msg->cam_objects[i].angle_left_std;
+    // bev_obj_set.cam_objects[i].angle_right = msg->cam_objects[i].angle_right;
+    // bev_obj_set.cam_objects[i].angle_right_std = msg->cam_objects[i].angle_right_std;
+    // bev_obj_set.cam_objects[i].angle_side = msg->cam_objects[i].angle_side;
+    // bev_obj_set.cam_objects[i].angle_side_std = msg->cam_objects[i].angle_side_std;
+    // bev_obj_set.cam_objects[i].angle_rate = msg->cam_objects[i].angle_rate;
+    // bev_obj_set.cam_objects[i].top_out_of_image = msg->cam_objects[i].top_out_of_image;
+    // bev_obj_set.cam_objects[i].bottom_out_of_image = msg->cam_objects[i].bottom_out_of_image;
+    // bev_obj_set.cam_objects[i].left_out_of_image = msg->cam_objects[i].left_out_of_image;
+    // bev_obj_set.cam_objects[i].right_out_of_image = msg->cam_objects[i].right_out_of_image;
+    // bev_obj_set.cam_objects[i].brake_light = msg->cam_objects[i].brake_light;
+    // bev_obj_set.cam_objects[i].turn_indicator_left = msg->cam_objects[i].turn_indicator_left;
+    // bev_obj_set.cam_objects[i].turn_indicator_right = msg->cam_objects[i].turn_indicator_right;
+    // bev_obj_set.cam_objects[i].measuring_status = msg->cam_objects[i].measuring_status;
+    // bev_obj_set.cam_objects[i].motion_orientation = msg->cam_objects[i].motion_orientation;
+    // bev_obj_set.cam_objects[i].motion_category = msg->cam_objects[i].motion_category;
+    // bev_obj_set.cam_objects[i].motion_status = msg->cam_objects[i].motion_status;
+    // bev_obj_set.cam_objects[i].cutin_cutout = msg->cam_objects[i].cutin_cutout;
+    // bev_obj_set.cam_objects[i].lat_distance = msg->cam_objects[i].lat_distance;
+    // bev_obj_set.cam_objects[i].lat_distance_std = msg->cam_objects[i].lat_distance_std;
+    // bev_obj_set.cam_objects[i].long_distance = msg->cam_objects[i].long_distance;
+    // bev_obj_set.cam_objects[i].long_distance_std = msg->cam_objects[i].long_distance_std;
+    // bev_obj_set.cam_objects[i].relative_lat_velocity = msg->cam_objects[i].relative_lat_velocity;
+    // bev_obj_set.cam_objects[i].relative_lat_velocity_std =
+    //     msg->cam_objects[i].relative_lat_velocity_std;
+    // bev_obj_set.cam_objects[i].relative_long_velocity = msg->cam_objects[i].relative_long_velocity;
+    // bev_obj_set.cam_objects[i].relative_long_velocity_std =
+    //     msg->cam_objects[i].relative_long_velocity_std;
+    // bev_obj_set.cam_objects[i].abs_lat_velocity = msg->cam_objects[i].abs_lat_velocity;
+    // bev_obj_set.cam_objects[i].abs_lat_velocity_std = msg->cam_objects[i].abs_lat_velocity_std;
+    // bev_obj_set.cam_objects[i].abs_long_velocity = msg->cam_objects[i].abs_long_velocity;
+    // bev_obj_set.cam_objects[i].abs_long_velocity_std = msg->cam_objects[i].abs_long_velocity_std;
+    // bev_obj_set.cam_objects[i].relative_lat_acc = msg->cam_objects[i].relative_lat_acc;
+    // bev_obj_set.cam_objects[i].relative_lat_acc_std = msg->cam_objects[i].relative_lat_acc_std;
+    // bev_obj_set.cam_objects[i].relative_long_acc = msg->cam_objects[i].relative_long_acc;
+    // bev_obj_set.cam_objects[i].relative_long_acc_std = msg->cam_objects[i].relative_long_acc_std;
+    // bev_obj_set.cam_objects[i].abs_lat_acc = msg->cam_objects[i].abs_lat_acc;
+    // bev_obj_set.cam_objects[i].abs_lat_acc_std = msg->cam_objects[i].abs_lat_acc_std;
+    // bev_obj_set.cam_objects[i].abs_long_acc = msg->cam_objects[i].abs_long_acc;
+    // bev_obj_set.cam_objects[i].abs_long_acc_std = msg->cam_objects[i].abs_long_acc_std;
+    // bev_obj_set.cam_objects[i].abs_speed = msg->cam_objects[i].abs_speed;
+    // bev_obj_set.cam_objects[i].abs_speed_std = msg->cam_objects[i].abs_speed_std;
+    // bev_obj_set.cam_objects[i].abs_acceleration = msg->cam_objects[i].abs_acceleration;
+    // bev_obj_set.cam_objects[i].abs_acceleration_std = msg->cam_objects[i].abs_acceleration_std;
+    // bev_obj_set.cam_objects[i].obj_lane_assignment = msg->cam_objects[i].obj_lane_assignment;
+    // bev_obj_set.cam_objects[i].is_bev_object = msg->cam_objects[i].is_bev_object;
+  }
+  std::memcpy(&multi_object_fusion_input.front_bev_object_in, &bev_obj_set,
+              sizeof(PerceptionBEVObject));
+
   bev_updated_ = true;
 }
 
@@ -126,243 +242,47 @@ void FusionNode::PerceptionCommandCallback(
 
 void FusionNode::GlobalPoseCallback(
     const calmcar::msg::GlobalPoseEstimation::SharedPtr msg) {
-  GlobalPose pose;
+  GlobalPoseEstimation pose;
   pose.time_stamp = msg->time_stamp;
   pose.time_stamp_can = msg->time_stamp_can;
   pose.x = msg->x;
   pose.y = msg->y;
+  pose.z = msg->z;
   pose.heading = msg->heading;
   pose.pitch = msg->pitch;
   pose.roll = msg->roll;
-
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (global_pose_cache_.empty()) {  // by smg 2025.11.1
-    global_pose_cache_.push_back(pose);
-    return;
-  } else {
-    if (global_pose_cache_.back().time_stamp == msg->time_stamp) {
-      return;  // 如果时间戳相同，认为是重复数据，直接返回
-    } else {
-      global_pose_cache_.push_back(pose);
-    }
-  }
-
-  if (global_pose_cache_.size() > 200) {
-    global_pose_cache_.pop_front();
-  }
-
-
+  std::memcpy(&multi_object_fusion_input.global_pose_in,
+              &pose,
+              sizeof(GlobalPoseEstimation));
   // RCLCPP_INFO(this->get_logger(),
   //           "Global Pose: x=%f, y=%f",
   //           g_vehicle_pose.x, g_vehicle_pose.y);
   g_pose_updated = true;
 }
 
-bool FusionNode::QueryNearestLocalization(const double& timestamp, GlobalPose& localization) {
-  if (global_pose_cache_.empty()) {
-    std::cout << "QueryNearestLocalization: Localization message NOT received." << std::endl;
-    return false;
-  }
-  // reduce timestamp by time delay of sensor data transmission and perception
-  // consuming. now 0.0
-  double stamp = timestamp - 0.0;
-  double loc_ts;
-  for (auto it = global_pose_cache_.begin(); it != global_pose_cache_.end(); it++) {
-    localization = *it;
-    loc_ts = localization.time_stamp_can * 1e-3;  // ms to s
-    // loc_ts = localization->time_stamp * 1e-3;  // ms to s
-    if (loc_ts < stamp)
-      continue;
-    else
-      break;
-  }
-
-  if (abs(stamp - loc_ts) > 0.3) {
-    std::cout << "QueryNearestLocalization: Time distance " << std::setprecision(3) << abs(stamp - loc_ts)
-           << " between fusion objects: " << std::setprecision(18) << stamp << " and localization: " << std::setprecision(18) << loc_ts
-           << " is too long." << std::endl;
-    return false;
-  }
-  return true;
-}
-
-
-SvsFrame FusionNode::ConvertObjectSetToSvsFrame(const calmcar::msg::ObjectSet& msg) {
-  SvsFrame svs_frame;
-  svs_frame.time_ns = msg.time_stamp * 1e-3;
-
-  for (uint8_t i = 0; i < msg.object_cnt && i < 64; ++i) {
-    const auto& obj_info = msg.object_set[i];
-    SvsObject svs_obj;
-    svs_obj.timestamp_raw = msg.time_stamp_raw * 1e-3;
-
-    svs_obj.object.timestamp = msg.time_stamp * 1e-3;
-    svs_obj.object.id = static_cast<uint8_t>(obj_info.tracking_id);
-    svs_obj.object.x = obj_info.distance_x;
-    svs_obj.object.y = obj_info.distance_y;
-    svs_obj.object.vx = obj_info.relative_velocity_x;
-    svs_obj.object.vy = obj_info.relative_velocity_y;
-    svs_obj.object.ax = obj_info.relative_acceleration_x;
-    svs_obj.object.ay = obj_info.relative_acceleration_y;
-    svs_obj.object.yaw = obj_info.yaw;
-    svs_obj.object.length = obj_info.length;
-    svs_obj.object.width = obj_info.width;
-    svs_obj.object.height = obj_info.height;
-    // svs_obj.object.flag = (obj_info.valid_status > 0) ? 1 : 0;
-    svs_obj.object.flag = 1;
-    // Map class_id to ObjectType
-    switch (obj_info.class_id) {
-      case 1: svs_obj.object.type = ObjectType::kCar; break;
-      case 2: svs_obj.object.type = ObjectType::kBus; break;
-      case 3: svs_obj.object.type = ObjectType::kTruck; break;
-      case 4: svs_obj.object.type = ObjectType::kPerson; break;
-      case 5: svs_obj.object.type = ObjectType::kCyclist; break;
-      case 6: svs_obj.object.type = ObjectType::kMotorcyclist; break;
-      default: svs_obj.object.type = ObjectType::kUnknown; break;
-    }
-
-    // Map motion_status
-    switch (obj_info.motion_status) {
-      case 1: svs_obj.object.motion_status = MotionStatus::kMoving; break;
-      case 2: svs_obj.object.motion_status = MotionStatus::kOncoming; break;
-      case 3: svs_obj.object.motion_status = MotionStatus::kStationary; break;
-      case 4: svs_obj.object.motion_status = MotionStatus::kStopped; break;
-      default: svs_obj.object.motion_status = MotionStatus::kUnknown; break;
-    }
-    // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
-    // RCLCPP_INFO_STREAM(this->get_logger(), "[SVS Object Assign Info]");
-    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp_raw: " << svs_obj.timestamp_raw);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp    : " << svs_obj.object.timestamp);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "id           : " << static_cast<int>(svs_obj.object.id));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "x            : " << svs_obj.object.x);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "y            : " << svs_obj.object.y);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "vx           : " << svs_obj.object.vx);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "vy           : " << svs_obj.object.vy);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "ax           : " << svs_obj.object.ax);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "ay           : " << svs_obj.object.ay);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "yaw          : " << svs_obj.object.yaw);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "length       : " << svs_obj.object.length);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "width        : " << svs_obj.object.width);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "height       : " << svs_obj.object.height);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "flag         : " << static_cast<int>(svs_obj.object.flag));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "valid_status : " << static_cast<int>(obj_info.valid_status));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
-    RCLCPP_INFO_STREAM_THROTTLE(
-        this->get_logger(), *this->get_clock(),
-        1000,  // 👈 改这里：间隔毫秒数
-        "====================================="
-            << "\n"
-            << "[SVS Object Throttled (10Hz)]" << "\n"
-            << "timestamp_raw: " << svs_obj.timestamp_raw << "\n"
-            << "timestamp    : " << svs_obj.object.timestamp << "\n"
-            << "id           : " << static_cast<int>(svs_obj.object.id) << "\n"
-            << "x            : " << svs_obj.object.x << "\n"
-            << "y            : " << svs_obj.object.y << "\n"
-            << "vx           : " << svs_obj.object.vx << "\n"
-            << "vy           : " << svs_obj.object.vy << "\n"
-            << "flag         : " << static_cast<int>(svs_obj.object.flag) << "\n"
-            << "=====================================");
-    svs_frame.svs_object_list.push_back(svs_obj);
-  }
-
-  return svs_frame;
-}
-
-BevFrame FusionNode::ConvertPerceptionBEVToBevFrame(
-    const calmcar::msg::PerceptionBEVObject& msg) {
-  BevFrame bev_frame;
-  bev_frame.time_ns = msg.timestamp * 1e-3;
-
-  for (uint8_t i = 0; i < msg.num_of_objects && i < 40; ++i) {
-    const auto& obj_info = msg.cam_objects[i];
-    BevObject bev_obj;
-    bev_obj.timestamp_raw = static_cast<uint64_t>(obj_info.timestamp_raw);
-
-    bev_obj.object.timestamp = msg.timestamp * 1e-3;
-    bev_obj.object.id = obj_info.id;
-    // BEV coordinates: lat_distance is Y (lateral), long_distance is X (longitudinal)
-    bev_obj.object.x = obj_info.long_distance;
-    bev_obj.object.y = obj_info.lat_distance;
-    // Convert absolute velocities
-    bev_obj.object.vx = obj_info.abs_long_velocity;
-    bev_obj.object.vy = obj_info.abs_lat_velocity;
-    // Convert accelerations
-    bev_obj.object.ax = obj_info.abs_long_acc;
-    bev_obj.object.ay = obj_info.abs_lat_acc;
-    bev_obj.object.yaw = obj_info.heading;
-    bev_obj.object.length = obj_info.length;
-    bev_obj.object.width = obj_info.width;
-    bev_obj.object.height = 1.5f;  // Default height
-    bev_obj.object.flag = 1;
-
-    // Map class_a to ObjectType
-    switch (obj_info.class_a) {
-      case 1: bev_obj.object.type = ObjectType::kCar; break;
-      case 2: bev_obj.object.type = ObjectType::kBus; break;
-      case 3: bev_obj.object.type = ObjectType::kTruck; break;
-      case 4: bev_obj.object.type = ObjectType::kPerson; break;
-      case 5: bev_obj.object.type = ObjectType::kCyclist; break;
-      default: bev_obj.object.type = ObjectType::kUnknown; break;
-    }
-
-    // Map motion_status
-    switch (obj_info.motion_status) {
-      case 1: bev_obj.object.motion_status = MotionStatus::kMoving; break;
-      case 2: bev_obj.object.motion_status = MotionStatus::kOncoming; break;
-      case 3: bev_obj.object.motion_status = MotionStatus::kStationary; break;
-      case 4: bev_obj.object.motion_status = MotionStatus::kStopped; break;
-      default: bev_obj.object.motion_status = MotionStatus::kUnknown; break;
-    }
-
-    bev_frame.bev_object_list.push_back(bev_obj);
-  }
-
-  return bev_frame;
-}
-
 void FusionNode::TimerCallback() {
   frame_count_++;
-
-  FrameData frame_data;
-
-  if (g_pose_updated) {
-    frame_data.svs_pose = g_vehicle_pose;
-    frame_data.bev_pose = g_vehicle_pose;
-    frame_data.radar_pose = g_vehicle_pose;
-  } else {
-    // Use default pose if not updated
-    frame_data.svs_pose.time_stamp = static_cast<uint64_t>(frame_count_) * 50 * 1000000;
-    frame_data.svs_pose.time_stamp_can = frame_data.svs_pose.time_stamp;
-    frame_data.bev_pose = frame_data.svs_pose;
-    frame_data.radar_pose = frame_data.svs_pose;
-  }
-  // if (svs_updated_ && fusion_component_.GetConfig().enable_svs) {
-    frame_data.svs_frame = last_svs_frame_;
-  //   svs_updated_ = false;
-  // }
-  GlobalPose glb_lastest;
-  if (!QueryNearestLocalization(frame_data.svs_frame.time_ns, glb_lastest)) {
-    std::cout << "Failed to get nearest localization." << std::endl;
-    return;
-  }
-
-  if (bev_updated_ && fusion_component_.GetConfig().enable_bev) {
-    frame_data.bev_frame = last_bev_frame_;
-    bev_updated_ = false;
-  }
-
-  uint64_t meas_time = frame_data.svs_pose.time_stamp;
-  fusion_component_.Process(frame_data, meas_time);
-
+  // Algo Interface
+  fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
+  // Display Data
   std::vector<FusedObject> results;
   fusion_component_.GetFusionResults(&results);
-
+  FrameData frame_data;
+  fusion_component_.GetFrameData(&frame_data);
   // Publish visualization
   if (rviz_display_) {
-    rviz_display_->PublishAll(frame_data, results);
+    GlobalPose pose;
+    pose.time_stamp = multi_object_fusion_input.global_pose_in.time_stamp * 1e-3;
+    pose.time_stamp_can = multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3;
+    pose.x = multi_object_fusion_input.global_pose_in.x;
+    pose.y = multi_object_fusion_input.global_pose_in.y;
+    pose.heading = multi_object_fusion_input.global_pose_in.heading;
+    pose.pitch = multi_object_fusion_input.global_pose_in.pitch;
+    pose.roll = multi_object_fusion_input.global_pose_in.roll;
+    rviz_display_->PublishAll(frame_data, results, pose);
   }
 
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                        "Frame %d: SVS %zu, BEV %zu, output %zu tracks",
                        frame_count_,
                        frame_data.svs_frame.svs_object_list.size(),

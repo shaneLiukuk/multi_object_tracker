@@ -38,6 +38,8 @@ constexpr float kPi = 3.14159265358979f;
 constexpr float kTimeDiffMin = 0.05f;
 constexpr float kTimeDiffMax = 0.5f;
 
+constexpr float kEpsilon = 0.000000001;
+
 enum class ObjectType : uint8_t {
   kUnknown = 0,
   kCar = 1,
@@ -84,8 +86,9 @@ enum class ObjDetProp : uint8_t {
   kFused = 5
 };
 
+// ===================== 带 Reset() 的结构体 =====================
 struct Object {
-  uint64_t timestamp = 0;
+  double timestamp = 0;
   uint8_t id = 0;
   float x = 0.0f;
   float y = 0.0f;
@@ -100,46 +103,84 @@ struct Object {
   ObjectType type = ObjectType::kUnknown;
   MotionStatus motion_status = MotionStatus::kUnknown;
   uint8_t flag = 0;
+
+  inline void Reset() {
+    *this = Object();
+  }
 };
 
 struct SvsObject {
-  uint64_t timestamp_raw = 0;
+  double timestamp_raw = 0;
   Object object;
+
+  inline void Reset() {
+    timestamp_raw = 0;
+    object.Reset();
+  }
 };
 
 struct BevObject {
-  uint64_t timestamp_raw = 0;
+  double timestamp_raw = 0;
   Object object;
+
+  inline void Reset() {
+    timestamp_raw = 0;
+    object.Reset();
+  }
 };
 
 struct RadarObject {
-  uint64_t timestamp_raw = 0;
+  double timestamp_raw = 0;
   Object object;
+
+  inline void Reset() {
+    timestamp_raw = 0;
+    object.Reset();
+  }
 };
 
 struct SvsFrame {
-  uint64_t time_ns = 0;
+  double time_ns = 0;
   std::vector<SvsObject> svs_object_list;
+
+  inline void Reset() {
+    time_ns = 0;
+    svs_object_list.clear();
+  }
 };
 
 struct BevFrame {
-  uint64_t time_ns = 0;
+  double time_ns = 0;
   std::vector<BevObject> bev_object_list;
+
+  inline void Reset() {
+    time_ns = 0;
+    bev_object_list.clear();
+  }
 };
 
 struct RadarFrame {
-  uint64_t time_ns = 0;
+  double time_ns = 0;
   std::vector<RadarObject> radar_object_list;
+
+  inline void Reset() {
+    time_ns = 0;
+    radar_object_list.clear();
+  }
 };
 
 struct GlobalPose {
-  uint64_t time_stamp = 0;
-  uint64_t time_stamp_can = 0;
+  double time_stamp = 0;
+  double time_stamp_can = 0;
   float x = 0.0f;
   float y = 0.0f;
   float heading = 0.0f;
   float pitch = 0.0f;
   float roll = 0.0f;
+
+  inline void Reset() {
+    *this = GlobalPose();
+  }
 };
 
 struct FrameData {
@@ -149,6 +190,15 @@ struct FrameData {
   GlobalPose svs_pose;
   GlobalPose bev_pose;
   GlobalPose radar_pose;
+
+  inline void Reset() {
+    svs_frame.Reset();
+    bev_frame.Reset();
+    radar_frame.Reset();
+    svs_pose.Reset();
+    bev_pose.Reset();
+    radar_pose.Reset();
+  }
 };
 
 struct FusedObject {
@@ -160,12 +210,23 @@ struct FusedObject {
   uint8_t svs_match_id = 0;
   uint8_t bev_match_id = 0;
   uint8_t radar_match_id = 0;
+
+  inline void Reset() {
+    object.Reset();
+    x_error = 0.0f;
+    y_error = 0.0f;
+    obj_det_prop = ObjDetProp::kUndefined;
+    state = TrackState::kUntracking;
+    svs_match_id = 0;
+    bev_match_id = 0;
+    radar_match_id = 0;
+  }
 };
 
 struct TrackStatus {
   int32_t cnt = 0;
   int32_t lst = 0;
-  uint64_t last_tracking_time = 0;
+  double last_tracking_time = 0;
   int32_t lst_svs = 0;
   int32_t lst_bev = 0;
   int32_t lst_radar = 0;
@@ -181,6 +242,10 @@ struct TrackStatus {
   uint8_t bev_match_id_history[10] = {0};
   uint8_t radar_match_id_history[10] = {0};
   uint8_t flag = 0;
+
+  inline void Reset() {
+    *this = TrackStatus();
+  }
 };
 
 struct Track {
@@ -193,6 +258,18 @@ struct Track {
   std::vector<FusedObject> output;
   int32_t cnt = 0;
   uint8_t cursor = 1;
+
+  inline void Reset() {
+    matrix.clear();
+    lst_flg.clear();
+    status.clear();
+    x_est.setZero();
+    p_est.setZero();
+    estimated.clear();
+    output.clear();
+    cnt = 0;
+    cursor = 1;
+  }
 };
 
 }  // namespace perception

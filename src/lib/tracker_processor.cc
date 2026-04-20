@@ -72,11 +72,13 @@ void TrackerProcessor::Process(
   std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
   std::vector<int32_t> trs_assoc_flag(kTrackWidth, 0);
   UpdateWithAssociated(observations, match_result, glb, sensor_type, meas_time, meas_assoc_flag, trs_assoc_flag);
-    std::cout << "Process::meas_assoc_flag:" << std::endl;
-    for (auto& el : meas_assoc_flag) {
-      std::cout << el << " ";
-    }
-    std::cout << std::endl;
+
+  std::cout << "Process::meas_assoc_flag:" << std::endl;
+  for (auto& el : meas_assoc_flag) {
+    std::cout << el << " ";
+  }
+  std::cout << std::endl;
+
   UpdateWithoutAssociated(sensor_type, meas_time);
 
   if (sensor_type == SensorType::kSvs) {
@@ -123,7 +125,7 @@ void TrackerProcessor::AssociateTracks(
   if (!has_used_track) {
     return;
   }
-  std::cout << "AssociateTracks:2" << std::endl;
+  std::cout << "Begin Calc Cost Matrix.\n"
   Eigen::MatrixXf cost_matrix = Eigen::MatrixXf::Ones(num_m, num_t) * 10000.0f;
 
   for (int32_t j = 0; j < num_t; ++j) {
@@ -179,7 +181,7 @@ void TrackerProcessor::AssociateTracks(
       }
     }
   }
-  std::cout << "AssociateTracks:3" << std::endl;
+  std::cout << "Begin Hungarian." << std::endl;
   Hungarian::Solve(cost_matrix, match_result);
 
   for (int32_t i = 0; i < num_m; ++i) {
@@ -555,6 +557,7 @@ void TrackerProcessor::GetResults(std::vector<FusedObject>* results) const {
     }
   }
 }
+
 
 }  // namespace fusion
 }  // namespace perception

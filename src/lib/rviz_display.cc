@@ -119,7 +119,7 @@ void RvizDisplay::PublishFusionResults(const std::vector<FusedObject>& results) 
 }
 
 void RvizDisplay::PublishAll(const FrameData& frame_data,
-                              const std::vector<FusedObject>& results) {
+                              const std::vector<FusedObject>& results, const GlobalPose& pose) {
   auto markers = std::make_shared<visualization_msgs::msg::MarkerArray>();
 
   // SVS observations - Blue
@@ -127,6 +127,7 @@ void RvizDisplay::PublishAll(const FrameData& frame_data,
   for (const auto& obj : frame_data.svs_frame.svs_object_list) {
     FusedObject fobj;
     fobj.object = obj.object;
+    GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
     fobj.svs_match_id = obj.object.id + 1;
     fobj.obj_det_prop = ObjDetProp::kSoleSvs;
     svs_fobjects.push_back(fobj);
@@ -159,7 +160,14 @@ void RvizDisplay::PublishAll(const FrameData& frame_data,
   markers->markers.insert(markers->markers.end(), radar_markers.begin(), radar_markers.end());
 
   // Fusion results - Yellow
-  auto fusion_markers = CreateBoxMarkers(results, "fusion", fusion_colors_);
+  std::vector<FusedObject> fused_res;
+  for (const auto& obj : results) {
+    FusedObject fobj;
+    fobj.object = obj.object;
+    GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
+    fused_res.push_back(fobj);
+  }
+  auto fusion_markers = CreateBoxMarkers(fused_res, "fusion", fusion_colors_);
   markers->markers.insert(markers->markers.end(), fusion_markers.begin(), fusion_markers.end());
 
   // Text labels for all

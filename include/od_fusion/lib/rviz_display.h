@@ -5,6 +5,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include "od_fusion/base/obstacle_constant.h"
+#include "od_fusion/lib/coordinate_transform.h"
 
 namespace perception {
 namespace fusion {
@@ -23,7 +24,7 @@ class RvizDisplay {
 
   void PublishFusionResults(const std::vector<FusedObject>& results);
 
-  void PublishAll(const FrameData& frame_data, const std::vector<FusedObject>& results);
+  void PublishAll(const FrameData& frame_data, const std::vector<FusedObject>& results, const GlobalPose& pose);
 
  private:
   void PublishMarkers(visualization_msgs::msg::MarkerArray::SharedPtr markers);

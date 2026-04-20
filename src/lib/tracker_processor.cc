@@ -125,7 +125,7 @@ void TrackerProcessor::AssociateTracks(
   if (!has_used_track) {
     return;
   }
-  std::cout << "Begin Calc Cost Matrix.\n"
+  std::cout << "Begin Calc Cost Matrix.\n";
   Eigen::MatrixXf cost_matrix = Eigen::MatrixXf::Ones(num_m, num_t) * 10000.0f;
 
   for (int32_t j = 0; j < num_t; ++j) {
@@ -221,6 +221,7 @@ void TrackerProcessor::UpdateWithAssociated(
     for (int32_t j = 0; j < num_t; ++j) {
       if (match_result(i, j) > 0) {
         Track& track = tracks_[j];
+        // TODO(Shane Liu): Maybe there is a problem with the historical cache.
         track.GetTrackObject() = obs;
         track.SetMeasFlag(0);
         track.SetHistoryFlag(track.GetPreviousIndex(0), 0);
@@ -280,13 +281,15 @@ void TrackerProcessor::UpdateWithAssociated(
       uint64_t last_time = track.GetLastTrackingTime();
       int32_t time_diff = static_cast<int32_t>(latest_obs.object.timestamp - last_time);
       float dt = static_cast<float>(time_diff) / 1000.0f;
+      std::cout << "dt: " << std::fixed << dt << "\n"; 
       if (dt <= 0.0f) {
         dt = kTimeDiffMin;
       }
       if (dt > kTimeDiffMax) {
         dt = kTimeDiffMax;
       }
-
+      // TODO(Shane Liu): Should Predict, 
+      track.Predict(dt);
       track.Update(latest_obs);
 
       float est_x = 0.0f, est_y = 0.0f, est_vx = 0.0f, est_vy = 0.0f;
@@ -307,6 +310,8 @@ void TrackerProcessor::UpdateWithAssociated(
       track.SetEstimated(estimated);
 
       track.SetLastTrackingTime(latest_obs.object.timestamp);
+
+      // TODO(Shane Liu): lack Yaw Update 
     }
   }
 }
@@ -349,8 +354,10 @@ void TrackerProcessor::UpdateWithoutAssociated(SensorType sensor_type, uint64_t 
       track.GetTrackObject() = latest_obs;
 
       track.SetLastTrackingTime(meas_time);
+      // TODO(Shane Liu): Current Process not use
       track.SetMeasFlag(1);
       track.SetFlag(1);
+      // TODO(Shane Liu): Add cnt,lst Update
 
       // Update sensor invisibility - this sensor didn't provide measurement
       track.UpdateWithoutSensorObject(sensor_type, meas_time);

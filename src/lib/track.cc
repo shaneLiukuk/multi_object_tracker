@@ -182,6 +182,7 @@ void Track::Update(const FusedObject& obs) {
 void Track::UpdateWithoutSensorObject(SensorType sensor_type, uint64_t meas_time) {
   // Update invisibility period for the sensor that didn't provide measurement
   double time_diff = 0.0;
+  // TODO(Shane Liu): Should use observation ,not last_tracking_time
   if (meas_time > status_.last_tracking_time) {
     time_diff = static_cast<double>(meas_time - status_.last_tracking_time) / 1000.0;
   }

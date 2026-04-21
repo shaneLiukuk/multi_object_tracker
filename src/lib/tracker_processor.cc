@@ -170,8 +170,6 @@ void TrackerProcessor::AssociateTracks(
     }
   }
   std::cout << "Beigin Hungarian::Solve \n";
-  int num_m = cost_matrix.rows();  // 行数
-  int num_t = cost_matrix.cols();  // 列数
   std::vector<std::vector<int>> costs(num_m, std::vector<int>(num_t));
   for (int i = 0; i < num_m; ++i) {
     for (int j = 0; j < num_t; ++j) {
@@ -179,16 +177,25 @@ void TrackerProcessor::AssociateTracks(
       costs[i][j] = static_cast<int>(cost_matrix(i, j));
     }
   }
+  std::vector<std::pair<size_t, size_t>> assignments;
   if (cost_matrix.rows() > 0 && cost_matrix.cols() > 0) {
     HungarianOptimizer<int> optimizer_;
     optimizer_.costs(costs);
-    std::vector<std::pair<size_t, size_t>> assignments;
     optimizer_.Minimize(&assignments);
   }
-  Eigen::MatrixXi mat(assignments.size(), 2);
-  for (int i = 0; i < mat.rows(); ++i) {
-    mat(i, 0) = assignments[i].first;
-    mat(i, 1) = assignments[i].second;
+  // Eigen::MatrixXi mat(assignments.size(), 2);
+  // for (int i = 0; i < mat.rows(); ++i) {
+  //   mat(i, 0) = assignments[i].first;
+  //   mat(i, 1) = assignments[i].second;
+  // }
+  // // 将 assignments 转换为 match_result 矩阵
+  match_result->setZero(num_m, num_t);
+  for (const auto &pair : assignments)
+  {
+    if (pair.first < num_m && pair.second < num_t)
+    {
+      (*match_result)(pair.first, pair.second) = 1;
+    }
   }
   std::cout << "Beigin Assign match_result.\n";
 

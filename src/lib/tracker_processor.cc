@@ -56,27 +56,27 @@ void TrackerProcessor::Process(
     return;
   }
   output->clear();
-
+  std::cout << "beigin AssociateTracks::sensor_type " << static_cast<int>(sensor_type) << std::endl;
   Eigen::MatrixXi match_result;
   AssociateTracks(observations, meas_time, sensor_type, &match_result);
-
+  std::cout << "beigin UpdateAssignedTracks." << std::endl;
   // Collect meas_assoc_flag and update assigned tracks
   std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
   UpdateAssignedTracks(observations, match_result, sensor_type, meas_time, meas_assoc_flag);
-
+  std::cout << "beigin UpdateUnassignedTracks." << std::endl;
   // Update unassigned tracks (no measurement this frame)
   UpdateUnassignedTracks(sensor_type, meas_time);
-
+  std::cout << "beigin CreateNewTracks." << std::endl;
   // Create new tracks from unmatched observations (only for SVS)
   if (sensor_type == SensorType::kSvs) {
     CreateNewTracks(observations, meas_assoc_flag);
   }
-
+  std::cout << "beigin RemoveLostTrack." << std::endl;
   RemoveLostTrack();
-
+  std::cout << "beigin UpdateMotSupplementState." << std::endl;
   std::vector<bool> is_fill;
   UpdateMotSupplementState(meas_time, &is_fill);
-
+  std::cout << "beigin PostProcess." << std::endl;
   PostProcess(is_fill, output);
 }
 
@@ -169,9 +169,11 @@ void TrackerProcessor::AssociateTracks(
       }
     }
   }
-
-  Hungarian::Solve(cost_matrix, match_result);
-
+  std::cout << "Beigin Hungarian::Solve \n";
+  if (cost_matrix.rows() > 0 && cost_matrix.cols() > 0) {
+    Hungarian::Solve(cost_matrix, match_result);
+  }
+  std::cout << "Beigin Assign match_result.\n";
   for (int32_t i = 0; i < num_m; ++i) {
     for (int32_t j = 0; j < num_t; ++j) {
       if ((*match_result)(i, j) > 0 && cost_matrix(i, j) < kCostThreshold) {
@@ -419,6 +421,7 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
 }
 
 void TrackerProcessor::RemoveLostTrack() {
+  int del_track_cnt = 0;
   for (int32_t i = 0; i < kTrackWidth; ++i) {
     Track& track = tracks_[i];
     bool dynamic_flag = false;
@@ -436,8 +439,10 @@ void TrackerProcessor::RemoveLostTrack() {
 
     if (track.IsUsed() && (dynamic_flag || lost_cnt_flag || !any_visible)) {
       track.Reset();
+      del_track_cnt++;
     }
   }
+  std::cout << "RemoveLostTrack::Removed " << del_track_cnt << " lost tracks."<< std::endl;
 }
 
 void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,

@@ -37,8 +37,7 @@ std::vector<FusedObject> OdFusionComponent::ConvertSvsToObservations(
     const SvsFrame& svs_frame) {
   std::vector<FusedObject> observations;
   for (const auto& svs_obj : svs_frame.svs_object_list) {
-    if (svs_obj.object.flag == 1 &&
-        IsInValidRange(svs_obj.object.x, svs_obj.object.y)) {
+    if (svs_obj.object.flag == 1) {
       FusedObject fobj;
       fobj.object.timestamp = svs_obj.timestamp_raw;
       fobj.object.id = svs_obj.object.id + 1;
@@ -65,8 +64,7 @@ std::vector<FusedObject> OdFusionComponent::ConvertBevToObservations(
     const BevFrame& bev_frame, float veh_head_rear_wheel) {
   std::vector<FusedObject> observations;
   for (const auto& bev_obj : bev_frame.bev_object_list) {
-    if (bev_obj.object.flag == 1 &&
-        IsInValidRange(bev_obj.object.x, bev_obj.object.y)) {
+    if (bev_obj.object.flag == 1) {
       FusedObject fobj;
       fobj.object.timestamp = bev_obj.timestamp_raw;
       fobj.object.id = bev_obj.object.id + 1;
@@ -123,22 +121,14 @@ std::vector<FusedObject> OdFusionComponent::ConvertRadarToObservations(
 
 void OdFusionComponent::ProcessSvs(const SvsFrame& svs_frame,
                                      const GlobalPose& svs_pose) {
-  if (!config_.enable_svs || svs_frame.svs_object_list.empty()) {
-    std::cout << "OdFusionComponent::ProcessSvs: svs is empty." << std::endl;
-    std::cout << "X Range: [ " 
-          << kSensorRangeXMin << ", " 
-          << kSensorRangeXMax << " ]\n";
-
-    std::cout << "Y Range: [ " 
-          << kSensorRangeYMin << ", " 
-          << kSensorRangeYMax << " ]\n";
+  if (!config_.enable_svs) {
     return;
   }
 
   std::vector<FusedObject> observations = ConvertSvsToObservations(svs_frame);
-  if (observations.empty()) {
-    return;
-  }
+  // if (observations.empty()) {
+  //   return;
+  // }
 
   uint64_t meas_time = svs_pose.time_stamp;
   std::vector<FusedObject> results;
@@ -149,15 +139,15 @@ void OdFusionComponent::ProcessSvs(const SvsFrame& svs_frame,
 void OdFusionComponent::ProcessBev(const BevFrame& bev_frame,
                                     const GlobalPose& bev_pose,
                                     float veh_head_rear_wheel) {
-  if (!config_.enable_bev || bev_frame.bev_object_list.empty()) {
+  if (!config_.enable_bev) {
     return;
   }
 
   std::vector<FusedObject> observations =
       ConvertBevToObservations(bev_frame, veh_head_rear_wheel);
-  if (observations.empty()) {
-    return;
-  }
+  // if (observations.empty()) {
+  //   return;
+  // }
 
   uint64_t meas_time = bev_pose.time_stamp;
   std::vector<FusedObject> results;
@@ -168,15 +158,15 @@ void OdFusionComponent::ProcessBev(const BevFrame& bev_frame,
 void OdFusionComponent::ProcessRadar(const RadarFrame& radar_frame,
                                       const GlobalPose& radar_pose,
                                       float veh_spd) {
-  if (!config_.enable_radar || radar_frame.radar_object_list.empty()) {
+  if (!config_.enable_radar) {
     return;
   }
 
   std::vector<FusedObject> observations =
       ConvertRadarToObservations(radar_frame, veh_spd);
-  if (observations.empty()) {
-    return;
-  }
+  // if (observations.empty()) {
+  //   return;
+  // }
 
   uint64_t meas_time = radar_pose.time_stamp;
   std::vector<FusedObject> results;
@@ -193,13 +183,21 @@ void OdFusionComponent::Process(const MultiObjectTrackerInput& input, MultiObjec
   // AddGlobalPoseBufferToCache(input.global_pose_buffer_in);
   AddGlobalPoseToCache(input.global_pose_in);
   frame_data_.Reset();
+  
   if(!msg2InterFrame(input, frame_data_)) {
     std::cout << "ERROR:Valid frame is empty." << std::endl;
     return;
   }
+
   // std::cout << "Process:svs_frame " << std::fixed << frame_data_.svs_frame.time_ns << std::endl;
   // std::cout << "Process:svs_pose " << std::fixed << frame_data_.svs_pose.time_stamp << std::endl;
-
+  /*
+  不进行航迹处理的约束：
+  1.未找到合适的global pose
+  2.enable_未开
+  3.主传感器一直未收到测量更新
+  */
+  
   ProcessSvs(frame_data_.svs_frame, frame_data_.svs_pose);
 
   // ProcessBev(frame_data_.bev_frame, frame_data_.bev_pose, 0.0f);
@@ -243,7 +241,7 @@ bool OdFusionComponent::msg2InterFrame(const MultiObjectTrackerInput& input, Fra
 void OdFusionComponent::AddGlobalPoseToCache(const GlobalPoseEstimation& input) {
   // 1. 构造要缓存的 pose
   if (input.time_stamp_can - 0 < kEpsilon) {
-    std::cout << "AddGlobalPoseToCache:time" << std::fixed << input.time_stamp_can << std::endl;
+    std::cout << "AddGlobalPoseToCache:time " << std::fixed << input.time_stamp_can * 1e-3 << std::endl;
     return;
   }
   perception::GlobalPose pose;
@@ -346,7 +344,9 @@ SvsFrame OdFusionComponent::ConvertObjectSetToSvsFrame(const ObjectSet& msg, con
     svs_obj.timestamp_raw = msg.time_stamp_raw * 1e-3;
     svs_obj.object.timestamp = msg.time_stamp * 1e-3;
     svs_obj.object.id = static_cast<uint8_t>(obj_info.tracking_id);
-    if(IsInValidRange(obj_info.distance_x, obj_info.distance_y)) {
+    if (IsInValidRange(obj_info.distance_x, obj_info.distance_y)) {
+      // std::cout << "X Range: [ " << kSensorRangeXMin << ", " << kSensorRangeXMax << " ]\n";
+      // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
       continue;
     }
     LocalToGlobal(pose, obj_info.distance_x, obj_info.distance_y, &svs_obj.object.x, &svs_obj.object.y);

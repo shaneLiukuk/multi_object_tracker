@@ -65,6 +65,8 @@ void Hungarian::Solve(const Eigen::MatrixXf& cost_matrix,
   std::vector<bool> prime_matrix(n_rows * n_cols, false);
   std::vector<bool> new_star_matrix(n_rows * n_cols, false);
 
+  std::cout << "Hungarian::Solve: allocated vectors with size " << (n_rows * n_cols) << std::endl;
+
   int min_dim = std::min(n_rows, n_cols);
 
   if (n_rows <= n_cols) {
@@ -94,6 +96,8 @@ void Hungarian::Solve(const Eigen::MatrixXf& cost_matrix,
   }
 
   int* assignment_arr = assign.data();
+
+  std::cout << "Hungarian::Solve: starting main loop" << std::endl;
 
   while (true) {
     int n_covered_columns = 0;
@@ -231,6 +235,8 @@ void Hungarian::Solve(const Eigen::MatrixXf& cost_matrix,
       (*assignment)(i, assign[i]) = 1;
     }
   }
+
+  std::cout << "Hungarian::Solve: completed successfully" << std::endl;
 }
 
 }  // namespace fusion

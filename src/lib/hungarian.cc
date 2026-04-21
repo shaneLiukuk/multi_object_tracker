@@ -12,12 +12,32 @@ void Hungarian::Solve(const Eigen::MatrixXf& cost_matrix,
   int n_rows = static_cast<int>(cost_matrix.rows());
   int n_cols = static_cast<int>(cost_matrix.cols());
 
+  std::cout << "Hungarian::Solve: n_rows=" << n_rows << ", n_cols=" << n_cols << std::endl;
+
   if (assignment == nullptr) {
+    std::cout << "Hungarian::Solve: assignment is nullptr!" << std::endl;
     return;
   }
   assignment->setZero(n_rows, n_cols);
 
   if (n_rows == 0 || n_cols == 0) {
+    std::cout << "Hungarian::Solve: zero dimensions!" << std::endl;
+    return;
+  }
+
+  // Check for NaN/Inf in cost matrix
+  bool has_invalid = false;
+  for (int i = 0; i < n_rows && !has_invalid; ++i) {
+    for (int j = 0; j < n_cols && !has_invalid; ++j) {
+      float v = cost_matrix(i, j);
+      if (std::isnan(v) || std::isinf(v)) {
+        std::cout << "Hungarian::Solve: INVALID value at (" << i << "," << j << ") = " << v << std::endl;
+        has_invalid = true;
+      }
+    }
+  }
+  if (has_invalid) {
+    std::cout << "Hungarian::Solve: cost_matrix has NaN/Inf, skipping solve" << std::endl;
     return;
   }
 

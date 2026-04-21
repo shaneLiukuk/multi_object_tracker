@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdint>
 #include <limits>
+#include <deque>
 #include <iostream>
 #include <Eigen/Dense>
 #include "od_fusion/base/obstacle_constant.h"
@@ -32,11 +33,11 @@ class Track {
   static void SetMaxInvisiblePeriod(SensorType sensor_type, float period);
   static void ResetTrackIdCounter();
 
-  // Track ID
+  // ========== Track ID ==========
   int32_t GetId() const { return track_id_; }
   void SetId(int32_t id) { track_id_ = id; }
 
-  // State
+  // ========== State ==========
   TrackState GetState() const { return status_.state; }
   bool IsUsed() const { return status_.used > 0; }
   void SetUsed(bool used) { status_.used = used ? 1 : 0; }
@@ -48,21 +49,20 @@ class Track {
   void IncPredictionTime() { prediction_time_++; }
   void ResetPredictionTime() { prediction_time_ = 0; is_predicted_ = false; }
 
-  // Visibility per sensor type
+  // ========== Visibility per sensor type ==========
   bool IsVisible(SensorType sensor_type) const;
   bool IsSvsVisible() const { return IsVisible(SensorType::kSvs); }
   bool IsBevVisible() const { return IsVisible(SensorType::kBev); }
   bool IsRadarVisible() const { return IsVisible(SensorType::kRadar); }
 
-  // Tracking period
+  // ========== Tracking period ==========
   double GetTrackingPeriod() const { return tracking_period_; }
-  void AddTrackingPeriod(double period) { tracking_period_ += period; }
 
-  // Invisibility period per sensor
+  // ========== Invisibility period per sensor ==========
   double GetInvisibilityPeriod(SensorType sensor_type) const;
   void SetInvisibilityPeriod(SensorType sensor_type, double period);
 
-  // Counter management
+  // ========== Counter management ==========
   void UpdateCounter(int32_t* cnt, int32_t* lst, bool valid);
   void UpdateSvsCounter(bool valid);
   void UpdateBevCounter(bool valid);
@@ -75,39 +75,33 @@ class Track {
   void SetLastTrackingTime(uint64_t time) { status_.last_tracking_time = time; }
   uint64_t GetLastTrackingTime() const { return status_.last_tracking_time; }
 
-  // For measurement update without associated sensor
-  void UpdateSensorInvisibilityPeriod(SensorType sensor_type, uint64_t meas_time);
+  // ========== Sensor History Management (new design) ==========
+  // Add observation to sensor-specific history
+  void AddToSensorHistory(SensorType sensor_type, const FusedObject& obs);
 
-  // History buffer access
-  int32_t GetPreviousIndex(int32_t offset) const;
-  FusedObject& GetTrackObject();
-  const FusedObject& GetTrackObject() const;
-  FusedObject& GetHistoryObject(int32_t depth_idx);
-  const FusedObject& GetHistoryObject(int32_t depth_idx) const;
-  void SetHistoryObject(int32_t depth_idx, const FusedObject& obj);
-  uint8_t& GetHistoryFlag(int32_t depth_idx);
-  uint8_t GetHistoryFlag(int32_t depth_idx) const;
-  void SetHistoryFlag(int32_t depth_idx, uint8_t flag);
+  // Get sensor-specific history
+  const std::deque<FusedObject>& GetSensorHistory(SensorType sensor_type) const;
+  std::deque<FusedObject>& GetSensorHistory(SensorType sensor_type);
 
-  void SetCursorNext();
-  int32_t GetNextCursor() const;
+  // Get previous observation from sensor history
+  FusedObject GetPreviousSensorObject(SensorType sensor_type, int32_t offset) const;
 
-  // Estimated and output
-  FusedObject& GetEstimated() { return estimated_; }
-  const FusedObject& GetEstimated() const { return estimated_; }
-  void SetEstimated(const FusedObject& est) { estimated_ = est; }
+  // Prune old observations from sensor history (remove observations older than threshold)
+  void PruneSensorHistory(SensorType sensor_type, uint64_t current_time);
 
+  // ========== Fused Track Object (replaces estimated_) ==========
+  FusedObject& GetFusedObject() { return fused_object_; }
+  const FusedObject& GetFusedObject() const { return fused_object_; }
+  void SetFusedObject(const FusedObject& obj) { fused_object_ = obj; }
+
+  // ========== Output ==========
   FusedObject& GetOutput() { return output_; }
   const FusedObject& GetOutput() const { return output_; }
   void SetOutput(const FusedObject& out) { output_ = out; }
 
-  void SetSvsMatchId(uint8_t id) { estimated_.svs_match_id = id; }
-  void SetBevMatchId(uint8_t id) { estimated_.bev_match_id = id; }
-  void SetRadarMatchId(uint8_t id) { estimated_.radar_match_id = id; }
-
+  // ========== Flags ==========
   void SetMeasFlag(uint8_t flag) { meas_flag_ = flag; }
   uint8_t GetMeasFlag() const { return meas_flag_; }
-
   void SetFlag(uint8_t flag) { status_.flag = flag; }
   uint8_t GetFlag() const { return status_.flag; }
 
@@ -121,16 +115,18 @@ class Track {
 
  private:
   int32_t track_id_;
-  uint8_t cursor_;
   TrackStatus status_;
   CvKalmanFilter kalman_filter_;
-  std::vector<FusedObject> matrix_;
-  std::vector<uint8_t> lst_flg_;
-  FusedObject estimated_;
+
+  // Current fused track object (updated at each measurement)
+  FusedObject fused_object_;
+
+  // Output object (for publishing)
   FusedObject output_;
+
   uint8_t meas_flag_;
 
-  // New state variables
+  // ========== State variables ==========
   bool is_alive_;
   bool is_predicted_;
   int32_t prediction_time_;
@@ -143,6 +139,12 @@ class Track {
   uint64_t last_obs_time_svs_;
   uint64_t last_obs_time_bev_;
   uint64_t last_obs_time_radar_;
+
+  // ========== Sensor History (new design - separate per sensor) ==========
+  static constexpr size_t kMaxSensorHistorySize = 30;
+  std::deque<FusedObject> sensor_history_svs_;
+  std::deque<FusedObject> sensor_history_bev_;
+  std::deque<FusedObject> sensor_history_radar_;
 
   // Static configurable parameters
   static int32_t s_track_idx_;

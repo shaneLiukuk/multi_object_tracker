@@ -63,21 +63,11 @@ void TrackerProcessor::Process(
   output->clear();
 
   Eigen::MatrixXi match_result;
-  AssociateTracks(observations, meas_time, &match_result);
+  AssociateTracks(observations, meas_time, sensor_type, &match_result);
 
-  // std::cout << "Process:match_result:\n";
-  // for (int i = 0; i < 5 && i < match_result.rows(); ++i) {
-  //     std::cout << match_result.row(i) << "\n";
-  // }
   std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
   std::vector<int32_t> trs_assoc_flag(kTrackWidth, 0);
   UpdateWithAssociated(observations, match_result, glb, sensor_type, meas_time, meas_assoc_flag, trs_assoc_flag);
-
-  std::cout << "Process::meas_assoc_flag:" << std::endl;
-  for (auto& el : meas_assoc_flag) {
-    std::cout << el << " ";
-  }
-  std::cout << std::endl;
 
   UpdateWithoutAssociated(sensor_type, meas_time);
 
@@ -96,6 +86,7 @@ void TrackerProcessor::Process(
 void TrackerProcessor::AssociateTracks(
     const std::vector<FusedObject>& observations,
     uint64_t meas_time,
+    SensorType sensor_type,
     Eigen::MatrixXi* match_result) {
   const int32_t num_m = kMaxObsFuse;
   const int32_t num_t = kTrackWidth;
@@ -125,7 +116,7 @@ void TrackerProcessor::AssociateTracks(
   if (!has_used_track) {
     return;
   }
-  std::cout << "Begin Calc Cost Matrix.\n";
+
   Eigen::MatrixXf cost_matrix = Eigen::MatrixXf::Ones(num_m, num_t) * 10000.0f;
 
   for (int32_t j = 0; j < num_t; ++j) {
@@ -133,13 +124,13 @@ void TrackerProcessor::AssociateTracks(
       continue;
     }
 
-    float tx = tracks_[j].GetEstimated().object.x;
-    float ty = tracks_[j].GetEstimated().object.y;
-    float tvx = tracks_[j].GetEstimated().object.vx;
-    float tvy = tracks_[j].GetEstimated().object.vy;
+    float tx = tracks_[j].GetFusedObject().object.x;
+    float ty = tracks_[j].GetFusedObject().object.y;
+    float tvx = tracks_[j].GetFusedObject().object.vx;
+    float tvy = tracks_[j].GetFusedObject().object.vy;
 
-    int32_t prev_idx = tracks_[j].GetPreviousIndex(1);
-    const FusedObject& prev_obs = tracks_[j].GetHistoryObject(prev_idx);
+    // Get previous observation from SVS history for ID matching
+    const FusedObject& prev_obs = tracks_[j].GetPreviousSensorObject(SensorType::kSvs, 1);
 
     for (int32_t i = 0; i < num_m && i < static_cast<int32_t>(observations.size()); ++i) {
       const auto& obs = observations[i];
@@ -181,7 +172,7 @@ void TrackerProcessor::AssociateTracks(
       }
     }
   }
-  std::cout << "Begin Hungarian." << std::endl;
+
   Hungarian::Solve(cost_matrix, match_result);
 
   for (int32_t i = 0; i < num_m; ++i) {
@@ -206,9 +197,6 @@ void TrackerProcessor::UpdateWithAssociated(
   const int32_t num_m = kMaxObsFuse;
   const int32_t num_t = kTrackWidth;
 
-  // std::vector<int32_t> meas_assoc_flag(num_m, 0);
-  // std::vector<int32_t> trs_assoc_flag(num_t, 0);
-
   for (int32_t i = 0; i < num_m; ++i) {
     if (i >= static_cast<int32_t>(observations.size())) {
       break;
@@ -221,10 +209,8 @@ void TrackerProcessor::UpdateWithAssociated(
     for (int32_t j = 0; j < num_t; ++j) {
       if (match_result(i, j) > 0) {
         Track& track = tracks_[j];
-        // TODO(Shane Liu): Maybe there is a problem with the historical cache.
-        track.GetTrackObject() = obs;
+        track.GetFusedObject() = obs;
         track.SetMeasFlag(0);
-        track.SetHistoryFlag(track.GetPreviousIndex(0), 0);
 
         if (obs.svs_match_id > 0) {
           track.UpdateSvsCounter(true);
@@ -276,19 +262,19 @@ void TrackerProcessor::UpdateWithAssociated(
   for (int32_t i = 0; i < num_t; ++i) {
     Track& track = tracks_[i];
     if (track.IsUsed() && track.GetFlag()) {
-      FusedObject latest_obs = track.GetTrackObject();
+      FusedObject latest_obs = track.GetFusedObject();
 
       uint64_t last_time = track.GetLastTrackingTime();
       int32_t time_diff = static_cast<int32_t>(latest_obs.object.timestamp - last_time);
       float dt = static_cast<float>(time_diff) / 1000.0f;
-      std::cout << "dt: " << std::fixed << dt << "\n"; 
       if (dt <= 0.0f) {
         dt = kTimeDiffMin;
       }
       if (dt > kTimeDiffMax) {
         dt = kTimeDiffMax;
       }
-      // TODO(Shane Liu): Should Predict, 
+
+      // First predict based on time difference, then update with observation
       track.Predict(dt);
       track.Update(latest_obs);
 
@@ -301,17 +287,15 @@ void TrackerProcessor::UpdateWithAssociated(
         est_vy = 0.0f;
       }
 
-      FusedObject estimated = track.GetEstimated();
+      FusedObject estimated = track.GetFusedObject();
       estimated.object.x = est_x;
       estimated.object.y = est_y;
       estimated.object.vx = est_vx;
       estimated.object.vy = est_vy;
       estimated.state = track.GetState();
-      track.SetEstimated(estimated);
+      track.SetFusedObject(estimated);
 
       track.SetLastTrackingTime(latest_obs.object.timestamp);
-
-      // TODO(Shane Liu): lack Yaw Update 
     }
   }
 }
@@ -320,12 +304,11 @@ void TrackerProcessor::UpdateWithoutAssociated(SensorType sensor_type, uint64_t 
   for (int32_t j = 0; j < kTrackWidth; ++j) {
     Track& track = tracks_[j];
     if (track.IsUsed() && track.GetFlag() == 0) {
-      FusedObject latest_obs = track.GetTrackObject();
+      // Get previous observation from the appropriate sensor history
+      FusedObject latest_obs = track.GetPreviousSensorObject(sensor_type, 1);
 
-      int32_t prev_idx = track.GetPreviousIndex(1);
-      latest_obs = track.GetHistoryObject(prev_idx);
-
-      int32_t time_diff = static_cast<int32_t>(meas_time - track.GetLastTrackingTime());
+      // Use the history observation's timestamp for accurate time difference
+      int32_t time_diff = static_cast<int32_t>(meas_time - latest_obs.object.timestamp);
       float dt = static_cast<float>(time_diff) / 1000.0f;
       if (dt <= 0.0f) {
         dt = kTimeDiffMin;
@@ -350,14 +333,11 @@ void TrackerProcessor::UpdateWithoutAssociated(SensorType sensor_type, uint64_t 
       latest_obs.object.vx = est_vx;
       latest_obs.object.vy = est_vy;
 
-      track.SetEstimated(latest_obs);
-      track.GetTrackObject() = latest_obs;
+      track.SetFusedObject(latest_obs);
 
       track.SetLastTrackingTime(meas_time);
-      // TODO(Shane Liu): Current Process not use
       track.SetMeasFlag(1);
       track.SetFlag(1);
-      // TODO(Shane Liu): Add cnt,lst Update
 
       // Update sensor invisibility - this sensor didn't provide measurement
       track.UpdateWithoutSensorObject(sensor_type, meas_time);
@@ -372,7 +352,6 @@ void TrackerProcessor::CreateNewTracks(
     if (obs_idx < meas_valid_flag.size() && meas_valid_flag[obs_idx] == 0 &&
         observations[obs_idx].object.flag) {
       int32_t slot_idx = FindEmptyTrackSlot();
-      std::cout << "CreateNewTracks:slot_idx:" << slot_idx << std::endl;
       if (slot_idx >= 0 && slot_idx < kTrackWidth) {
         tracks_[slot_idx].Initialize(observations[obs_idx]);
       } else {
@@ -404,13 +383,12 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
     const Track& track = tracks_[idx];
     FusedObject track_pos;
     if (track.GetFlag()) {
-      track_pos = track.GetTrackObject();
+      track_pos = track.GetFusedObject();
     } else {
-      int32_t prev_idx = track.GetPreviousIndex(1);
-      track_pos = track.GetHistoryObject(prev_idx);
+      track_pos = track.GetPreviousSensorObject(SensorType::kSvs, 1);
     }
 
-    ObjDetProp det_prop = track.GetEstimated().obj_det_prop;
+    ObjDetProp det_prop = track.GetFusedObject().obj_det_prop;
     bool is_replaceable = !(det_prop == ObjDetProp::kSoleRadar ||
                             det_prop == ObjDetProp::kFused);
 
@@ -439,8 +417,8 @@ void TrackerProcessor::RemoveLostTrack() {
   for (int32_t i = 0; i < kTrackWidth; ++i) {
     Track& track = tracks_[i];
     bool dynamic_flag = false;
-    float vx = track.GetEstimated().object.vx;
-    float vy = track.GetEstimated().object.vy;
+    float vx = track.GetFusedObject().object.vx;
+    float vy = track.GetFusedObject().object.vy;
 
     if (vx < 1.0f && track.GetStatus().lst >= kThresLost) {
       dynamic_flag = true;
@@ -471,10 +449,9 @@ void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
     if (track.IsUsed()) {
       FusedObject lastest_obs;
       if (track.GetFlag()) {
-        lastest_obs = track.GetTrackObject();
+        lastest_obs = track.GetFusedObject();
       } else {
-        int32_t prev_idx = track.GetPreviousIndex(1);
-        lastest_obs = track.GetHistoryObject(prev_idx);
+        lastest_obs = track.GetPreviousSensorObject(SensorType::kSvs, 1);
       }
 
       bool cnt_flag = (track.GetStatus().cnt > kThresOutput);
@@ -483,15 +460,15 @@ void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
       if (track.IsAlive() && cnt_flag) {
         FusedObject out;
         out.object.id = static_cast<uint8_t>(track.GetId());
-        out.object.x = track.GetEstimated().object.x;
-        out.object.y = track.GetEstimated().object.y;
+        out.object.x = track.GetFusedObject().object.x;
+        out.object.y = track.GetFusedObject().object.y;
 
         if (track.GetStatus().cnt > 50) {
-          out.object.vx = track.GetEstimated().object.vx;
+          out.object.vx = track.GetFusedObject().object.vx;
         } else {
           out.object.vx = 0.0f;
         }
-        out.object.vy = track.GetEstimated().object.vy;
+        out.object.vy = track.GetFusedObject().object.vy;
 
         out.state = track.GetState();
         out.object.type = lastest_obs.object.type;
@@ -510,7 +487,6 @@ void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
       }
     }
     track.SetFlag(0);
-    track.SetCursorNext();
   }
 
   track_cnt_++;
@@ -564,7 +540,6 @@ void TrackerProcessor::GetResults(std::vector<FusedObject>* results) const {
     }
   }
 }
-
 
 }  // namespace fusion
 }  // namespace perception

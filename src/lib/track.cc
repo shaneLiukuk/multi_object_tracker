@@ -17,12 +17,10 @@ constexpr int32_t kThresStable = 3;
 constexpr int32_t kThresUnstable = 2;
 constexpr int32_t kThresIdAssign = 20;
 constexpr float kVelocityThreshold = 1e-4f;
-constexpr float kPredictionThreshold = 4;  // Number of prediction cycles before marking as predicted
 }  // namespace
 
 Track::Track()
     : track_id_(0),
-      cursor_(1),
       meas_flag_(0),
       is_alive_(true),
       is_predicted_(false),
@@ -34,9 +32,6 @@ Track::Track()
       last_obs_time_svs_(0),
       last_obs_time_bev_(0),
       last_obs_time_radar_(0) {
-  const int32_t matrix_size = kTrackDepth * kTrackWidth;
-  matrix_.resize(matrix_size);
-  lst_flg_.assign(matrix_size, 0);
 }
 
 int32_t Track::GenerateNewTrackId() {
@@ -84,19 +79,16 @@ void Track::Reset() {
   status_.fused_type = ObjectType::kUnknown;
   status_.state = TrackState::kUntracking;
 
-  for (int d = 0; d < kTrackDepth; ++d) {
-    matrix_[d * kTrackWidth] = FusedObject();
-  }
-  for (int d = 0; d < kTrackDepth; ++d) {
-    lst_flg_[d * kTrackWidth] = 0;
-  }
-
+  fused_object_ = FusedObject();
   output_ = FusedObject();
-  estimated_ = FusedObject();
   meas_flag_ = 0;
-  cursor_ = 1;
 
-  // Reset new state variables
+  // Clear sensor histories
+  sensor_history_svs_.clear();
+  sensor_history_bev_.clear();
+  sensor_history_radar_.clear();
+
+  // Reset state variables
   is_alive_ = true;
   is_predicted_ = false;
   prediction_time_ = 0;
@@ -110,56 +102,48 @@ void Track::Reset() {
 }
 
 void Track::Initialize(const FusedObject& obs) {
-  GetTrackObject() = obs;
+  fused_object_ = obs;
 
   status_.used = 1;
   status_.flag = 1;
   status_.cnt = 1;
   status_.lst = 0;
 
-  // Initialize sensor-specific counters
+  // Initialize sensor-specific counters based on which sensor provided measurement
   if (obs.svs_match_id > 0) {
     status_.cnt_svs = 1;
     status_.lst_svs = 0;
     last_obs_time_svs_ = obs.object.timestamp;
+    AddToSensorHistory(SensorType::kSvs, obs);
   }
   if (obs.bev_match_id > 0) {
     status_.cnt_bev = 1;
     status_.lst_bev = 0;
     last_obs_time_bev_ = obs.object.timestamp;
+    AddToSensorHistory(SensorType::kBev, obs);
   }
   if (obs.radar_match_id > 0) {
     status_.cnt_radar = 1;
     status_.lst_radar = 0;
     last_obs_time_radar_ = obs.object.timestamp;
+    AddToSensorHistory(SensorType::kRadar, obs);
   }
 
   // Generate new track ID
   track_id_ = GenerateNewTrackId();
-  std::cout << "Initialize::track_id:" << track_id_ << std::endl;
 
   // Initialize Kalman filter
   kalman_filter_.Init(
       obs.object.x, obs.object.y, obs.object.vx, obs.object.vy,
       obs.object.type);
 
-  // Set estimated state
-  estimated_.object.x = obs.object.x;
-  estimated_.object.y = obs.object.y;
-  estimated_.object.vx = obs.object.vx;
-  estimated_.object.vy = obs.object.vy;
-  estimated_.state = status_.state;
-
   status_.last_tracking_time = obs.object.timestamp;
 
-  // Reset new state
+  // Reset state
   is_alive_ = true;
   is_predicted_ = false;
   prediction_time_ = 0;
   tracking_period_ = 0.0;
-  invisibility_period_svs_ = 0.0;
-  invisibility_period_bev_ = 0.0;
-  invisibility_period_radar_ = 0.0;
 }
 
 void Track::Predict(float dt) {
@@ -177,12 +161,22 @@ void Track::Update(const FusedObject& obs) {
     double time_diff = static_cast<double>(obs.object.timestamp - status_.last_tracking_time) / 1000.0;
     tracking_period_ += time_diff;
   }
+
+  // Add observation to appropriate sensor history
+  if (obs.svs_match_id > 0) {
+    AddToSensorHistory(SensorType::kSvs, obs);
+  }
+  if (obs.bev_match_id > 0) {
+    AddToSensorHistory(SensorType::kBev, obs);
+  }
+  if (obs.radar_match_id > 0) {
+    AddToSensorHistory(SensorType::kRadar, obs);
+  }
 }
 
 void Track::UpdateWithoutSensorObject(SensorType sensor_type, uint64_t meas_time) {
   // Update invisibility period for the sensor that didn't provide measurement
   double time_diff = 0.0;
-  // TODO(Shane Liu): Should use observation ,not last_tracking_time
   if (meas_time > status_.last_tracking_time) {
     time_diff = static_cast<double>(meas_time - status_.last_tracking_time) / 1000.0;
   }
@@ -216,30 +210,9 @@ void Track::UpdateWithoutSensorObject(SensorType sensor_type, uint64_t meas_time
   // Update prediction state
   SetPredicted(true);
   IncPredictionTime();
-}
 
-void Track::UpdateSensorInvisibilityPeriod(SensorType sensor_type, uint64_t meas_time) {
-  double period = 0.0;
-  if (meas_time > status_.last_tracking_time) {
-    period = static_cast<double>(meas_time - status_.last_tracking_time) / 1000.0;
-  }
-
-  switch (sensor_type) {
-    case SensorType::kSvs:
-      invisibility_period_svs_ = period;
-      last_obs_time_svs_ = meas_time;
-      break;
-    case SensorType::kBev:
-      invisibility_period_bev_ = period;
-      last_obs_time_bev_ = meas_time;
-      break;
-    case SensorType::kRadar:
-      invisibility_period_radar_ = period;
-      last_obs_time_radar_ = meas_time;
-      break;
-    default:
-      break;
-  }
+  // Prune old observations from this sensor's history
+  PruneSensorHistory(sensor_type, meas_time);
 }
 
 double Track::GetInvisibilityPeriod(SensorType sensor_type) const {
@@ -314,60 +287,129 @@ void Track::UpdateRadarCounter(bool valid) {
 }
 
 void Track::UpdateFusedCounter() {
-  if (status_.cnt_fused >= kThresIdAssign && estimated_.svs_match_id > 0) {
-    status_.fused_type = estimated_.object.type;
+  if (status_.cnt_fused >= kThresIdAssign && fused_object_.svs_match_id > 0) {
+    status_.fused_type = fused_object_.object.type;
   }
 }
 
-int32_t Track::GetPreviousIndex(int32_t offset) const {
-  int32_t idx = static_cast<int32_t>(cursor_) - offset - 1;
-  if (idx < 1) {
-    idx += kTrackDepth;
+// ========== Sensor History Implementation ==========
+
+void Track::AddToSensorHistory(SensorType sensor_type, const FusedObject& obs) {
+  std::deque<FusedObject>* history = nullptr;
+
+  switch (sensor_type) {
+    case SensorType::kSvs:
+      history = &sensor_history_svs_;
+      break;
+    case SensorType::kBev:
+      history = &sensor_history_bev_;
+      break;
+    case SensorType::kRadar:
+      history = &sensor_history_radar_;
+      break;
+    default:
+      return;
   }
-  return idx;
-}
 
-void Track::SetCursorNext() {
-  cursor_ = GetNextCursor();
-}
+  history->push_back(obs);
 
-int32_t Track::GetNextCursor() const {
-  if (cursor_ >= kTrackDepth) {
-    return 1;
+  // Maintain max size of 30
+  while (history->size() > kMaxSensorHistorySize) {
+    history->pop_front();
   }
-  return cursor_ + 1;
 }
 
-FusedObject& Track::GetTrackObject() {
-  return matrix_[(cursor_ - 1) * kTrackWidth];
+const std::deque<FusedObject>& Track::GetSensorHistory(SensorType sensor_type) const {
+  switch (sensor_type) {
+    case SensorType::kSvs:
+      return sensor_history_svs_;
+    case SensorType::kBev:
+      return sensor_history_bev_;
+    case SensorType::kRadar:
+      return sensor_history_radar_;
+    default:
+      static std::deque<FusedObject> empty;
+      return empty;
+  }
 }
 
-const FusedObject& Track::GetTrackObject() const {
-  return matrix_[(cursor_ - 1) * kTrackWidth];
+std::deque<FusedObject>& Track::GetSensorHistory(SensorType sensor_type) {
+  switch (sensor_type) {
+    case SensorType::kSvs:
+      return sensor_history_svs_;
+    case SensorType::kBev:
+      return sensor_history_bev_;
+    case SensorType::kRadar:
+      return sensor_history_radar_;
+    default:
+      static std::deque<FusedObject> empty;
+      return empty;
+  }
 }
 
-FusedObject& Track::GetHistoryObject(int32_t depth_idx) {
-  return matrix_[depth_idx * kTrackWidth];
+FusedObject Track::GetPreviousSensorObject(SensorType sensor_type, int32_t offset) const {
+  const std::deque<FusedObject>& history = GetSensorHistory(sensor_type);
+
+  if (history.empty()) {
+    return FusedObject();
+  }
+
+  // offset=0 means latest, offset=1 means previous, etc.
+  if (offset < 0 || static_cast<size_t>(offset) >= history.size()) {
+    return history.back();
+  }
+
+  // history[0] is oldest, history.back() is newest
+  // offset=0 -> return newest (back)
+  // offset=1 -> return second newest
+  size_t idx = history.size() - 1 - static_cast<size_t>(offset);
+  return history[idx];
 }
 
-const FusedObject& Track::GetHistoryObject(int32_t depth_idx) const {
-  return matrix_[depth_idx * kTrackWidth];
-}
+void Track::PruneSensorHistory(SensorType sensor_type, uint64_t current_time) {
+  // Get the max invisible period threshold for this sensor
+  float max_period = 0.0f;
+  switch (sensor_type) {
+    case SensorType::kSvs:
+      max_period = s_max_invisible_period_svs_;
+      break;
+    case SensorType::kBev:
+      max_period = s_max_invisible_period_bev_;
+      break;
+    case SensorType::kRadar:
+      max_period = s_max_invisible_period_radar_;
+      break;
+    default:
+      return;
+  }
 
-void Track::SetHistoryObject(int32_t depth_idx, const FusedObject& obj) {
-  matrix_[depth_idx * kTrackWidth] = obj;
-}
+  // Threshold = max_period * 2 (e.g., if max_period is 0.5s, threshold is 1.0s)
+  double threshold = max_period * 2.0;
 
-uint8_t& Track::GetHistoryFlag(int32_t depth_idx) {
-  return lst_flg_[depth_idx * kTrackWidth];
-}
+  std::deque<FusedObject>* history = nullptr;
+  switch (sensor_type) {
+    case SensorType::kSvs:
+      history = &sensor_history_svs_;
+      break;
+    case SensorType::kBev:
+      history = &sensor_history_bev_;
+      break;
+    case SensorType::kRadar:
+      history = &sensor_history_radar_;
+      break;
+    default:
+      return;
+  }
 
-uint8_t Track::GetHistoryFlag(int32_t depth_idx) const {
-  return lst_flg_[depth_idx * kTrackWidth];
-}
-
-void Track::SetHistoryFlag(int32_t depth_idx, uint8_t flag) {
-  lst_flg_[depth_idx * kTrackWidth] = flag;
+  // Remove old observations (older than threshold)
+  while (!history->empty()) {
+    double time_diff = static_cast<double>(current_time - history->front().object.timestamp) / 1000.0;
+    if (time_diff > threshold) {
+      history->pop_front();
+    } else {
+      break;
+    }
+  }
 }
 
 void Track::CheckStability() {

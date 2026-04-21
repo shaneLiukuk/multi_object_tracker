@@ -30,6 +30,7 @@ class TrackerProcessor {
  private:
   void AssociateTracks(const std::vector<FusedObject>& observations,
                        uint64_t meas_time,
+                       SensorType sensor_type,
                        Eigen::MatrixXi* match_result);
 
   void UpdateWithAssociated(const std::vector<FusedObject>& observations,

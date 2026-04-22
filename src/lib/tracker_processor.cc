@@ -49,40 +49,40 @@ void TrackerProcessor::Reset() {
 void TrackerProcessor::Process(
     const std::vector<FusedObject>& observations,
     const GlobalPose& glb,
-    uint64_t meas_time,
+    double meas_time,
     SensorType sensor_type,
     std::vector<FusedObject>* output) {
   if (output == nullptr) {
     return;
   }
   output->clear();
-  std::cout << "beigin AssociateTracks::sensor_type " << static_cast<int>(sensor_type) << std::endl;
+  // std::cout << "beigin AssociateTracks::sensor_type " << static_cast<int>(sensor_type) << std::endl;
   Eigen::MatrixXi match_result;
   AssociateTracks(observations, meas_time, sensor_type, &match_result);
-  std::cout << "beigin UpdateAssignedTracks." << std::endl;
+  // std::cout << "beigin UpdateAssignedTracks." << std::endl;
   // Collect meas_assoc_flag and update assigned tracks
   std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
   UpdateAssignedTracks(observations, match_result, sensor_type, meas_time, meas_assoc_flag);
-  std::cout << "beigin UpdateUnassignedTracks." << std::endl;
+  // std::cout << "beigin UpdateUnassignedTracks." << std::endl;
   // Update unassigned tracks (no measurement this frame)
   UpdateUnassignedTracks(sensor_type, meas_time);
-  std::cout << "beigin CreateNewTracks." << std::endl;
+  // std::cout << "beigin CreateNewTracks." << std::endl;
   // Create new tracks from unmatched observations (only for SVS)
   if (sensor_type == SensorType::kSvs) {
-    CreateNewTracks(observations, meas_assoc_flag);
+    CreateNewTracks(observations, meas_assoc_flag, glb);
   }
-  std::cout << "beigin RemoveLostTrack." << std::endl;
+  // std::cout << "beigin RemoveLostTrack." << std::endl;
   RemoveLostTrack();
-  std::cout << "beigin UpdateMotSupplementState." << std::endl;
+  // std::cout << "beigin UpdateMotSupplementState." << std::endl;
   std::vector<bool> is_fill;
   UpdateMotSupplementState(meas_time, &is_fill);
-  std::cout << "beigin PostProcess." << std::endl;
+  // std::cout << "beigin PostProcess." << std::endl;
   PostProcess(is_fill, output);
 }
 
 void TrackerProcessor::AssociateTracks(
     const std::vector<FusedObject>& observations,
-    uint64_t meas_time,
+    double meas_time,
     SensorType sensor_type,
     Eigen::MatrixXi* match_result) {
   const int32_t num_m = kMaxObsFuse;
@@ -169,7 +169,7 @@ void TrackerProcessor::AssociateTracks(
       }
     }
   }
-  std::cout << "Beigin Hungarian::Solve \n";
+  // std::cout << "Beigin Hungarian::Solve \n";
   std::vector<std::vector<int>> costs(num_m, std::vector<int>(num_t));
   for (int i = 0; i < num_m; ++i) {
     for (int j = 0; j < num_t; ++j) {
@@ -197,7 +197,7 @@ void TrackerProcessor::AssociateTracks(
       (*match_result)(pair.first, pair.second) = 1;
     }
   }
-  std::cout << "Beigin Assign match_result.\n";
+  // std::cout << "Beigin Assign match_result.\n";
 
   for (int32_t i = 0; i < num_m; ++i) {
     for (int32_t j = 0; j < num_t; ++j) {
@@ -214,13 +214,14 @@ void TrackerProcessor::UpdateAssignedTracks(
     const std::vector<FusedObject>& observations,
     const Eigen::MatrixXi& match_result,
     SensorType sensor_type,
-    uint64_t meas_time,
+    double meas_time,
     std::vector<int32_t>& meas_assoc_flag) {
   const int32_t num_m = kMaxObsFuse;
   const int32_t num_t = kTrackWidth;
 
   // Directly iterate through match_result to find all matched observation-track pairs
   // and process all logic at once
+  // motion/shape/type/history_det/is_alive/lastest_tracked_time/
   for (int32_t j = 0; j < num_t; ++j) {
     for (int32_t i = 0; i < num_m && i < static_cast<int32_t>(observations.size()); ++i) {
       if (match_result(i, j) > 0) {
@@ -267,9 +268,11 @@ void TrackerProcessor::UpdateAssignedTracks(
         track.ResetPredictionTime();
         track.SetPredicted(false);
         track.SetAlive(true);
+        // Check stability for all tracks
+        track.CheckStability();
 
         // Calculate time difference for Kalman filter
-        uint64_t last_time = track.GetLastTrackingTime();
+        double last_time = track.GetLastTrackingTime();
         int32_t time_diff = static_cast<int32_t>(obs.object.timestamp - last_time);
         float dt = static_cast<float>(time_diff) / 1000.0f;
         if (dt <= 0.0f) {
@@ -281,6 +284,7 @@ void TrackerProcessor::UpdateAssignedTracks(
 
         // Kalman filter: Predict + Update
         track.Predict(dt);
+        // hitory_det / tracking period
         track.Update(obs);
 
         // Update fused object with filtered state
@@ -304,18 +308,13 @@ void TrackerProcessor::UpdateAssignedTracks(
         track.SetLastTrackingTime(obs.object.timestamp);
 
         // Found match for this track, no need to check other observations
-        break;
+        break; // Move to next track after processing the first matched observation
       }
     }
   }
-
-  // Check stability for all tracks
-  for (int32_t j = 0; j < num_t; ++j) {
-    tracks_[j].CheckStability();
-  }
 }
 
-void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, uint64_t meas_time) {
+void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double meas_time) {
   for (int32_t j = 0; j < kTrackWidth; ++j) {
     Track& track = tracks_[j];
     // Skip tracks that were assigned (flag == 1) or not used
@@ -335,8 +334,8 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, uint64_t m
     FusedObject prev_obs = track.GetPreviousSensorObject(sensor_type, 1);
 
     // Calculate time difference
-    int32_t time_diff = static_cast<int32_t>(meas_time - prev_obs.object.timestamp);
-    float dt = static_cast<float>(time_diff) / 1000.0f;
+    double time_diff = static_cast<double>(meas_time - prev_obs.object.timestamp);
+    float dt = static_cast<float>(time_diff);
     if (dt <= 0.0f) {
       dt = kTimeDiffMin;
     }
@@ -356,13 +355,13 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, uint64_t m
       est_vx = 0.0f;
       est_vy = 0.0f;
     }
+    FusedObject estimated = track.GetFusedObject();
+    estimated.object.x = est_x;
+    estimated.object.y = est_y;
+    estimated.object.vx = est_vx;
+    estimated.object.vy = est_vy;
 
-    prev_obs.object.x = est_x;
-    prev_obs.object.y = est_y;
-    prev_obs.object.vx = est_vx;
-    prev_obs.object.vy = est_vy;
-
-    track.SetFusedObject(prev_obs);
+    track.SetFusedObject(estimated);
 
     track.SetLastTrackingTime(meas_time);
     track.SetMeasFlag(1);
@@ -379,7 +378,8 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, uint64_t m
 
 void TrackerProcessor::CreateNewTracks(
     const std::vector<FusedObject>& observations,
-    const std::vector<int>& meas_valid_flag) {
+    const std::vector<int>& meas_valid_flag,
+    const GlobalPose& glb) {
   for (size_t obs_idx = 0; obs_idx < kMaxObsFuse && obs_idx < observations.size(); ++obs_idx) {
     if (obs_idx < meas_valid_flag.size() && meas_valid_flag[obs_idx] == 0 &&
         observations[obs_idx].object.flag) {
@@ -387,7 +387,7 @@ void TrackerProcessor::CreateNewTracks(
       if (slot_idx >= 0 && slot_idx < kTrackWidth) {
         tracks_[slot_idx].Initialize(observations[obs_idx]);
       } else {
-        int32_t replace_idx = FindReplaceableTrack(observations[obs_idx]);
+        int32_t replace_idx = FindReplaceableTrack(observations[obs_idx], glb);
         if (replace_idx != -1) {
           tracks_[replace_idx].Reset();
           tracks_[replace_idx].Initialize(observations[obs_idx]);
@@ -406,7 +406,7 @@ int32_t TrackerProcessor::FindEmptyTrackSlot() const {
   return -1;
 }
 
-int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
+int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const GlobalPose& pose) const {
   float max_dist_x = 0.0f;
   float max_dist_y = 2.5f;
   int32_t replace_idx = -1;
@@ -423,22 +423,27 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs) const {
     ObjDetProp det_prop = track.GetFusedObject().obj_det_prop;
     bool is_replaceable = !(det_prop == ObjDetProp::kSoleRadar ||
                             det_prop == ObjDetProp::kFused);
-
+    float x_t = 0.0;
+    float y_t = 0.0;
+    GlobalToLocal(pose, track_pos.object.x, track_pos.object.y, &x_t, &y_t);
+  
     if (is_replaceable &&
-        (std::abs(track_pos.object.x) > max_dist_x ||
-         std::abs(track_pos.object.y) > max_dist_y)) {
-      if (std::abs(track_pos.object.x) > max_dist_x) {
-        max_dist_x = std::abs(track_pos.object.x);
+        (std::abs(x_t) > max_dist_x ||
+         std::abs(y_t) > max_dist_y)) {
+      if (std::abs(x_t) > max_dist_x) {
+        max_dist_x = std::abs(x_t);
       }
-      if (std::abs(track_pos.object.y) > max_dist_y) {
-        max_dist_y = std::abs(track_pos.object.y);
+      if (std::abs(y_t) > max_dist_y) {
+        max_dist_y = std::abs(y_t);
       }
       replace_idx = idx;
     }
   }
-
+  float x_d = 0.0;
+  float y_d = 0.0;
+  GlobalToLocal(pose, obs.object.x, obs.object.y, &x_d, &y_d);
   bool should_replace =
-      (std::abs(obs.object.x) < max_dist_x) || (std::abs(obs.object.y) < max_dist_y);
+      (std::abs(x_d) < max_dist_x) || (std::abs(y_d) < max_dist_y);
   if (!should_replace) {
     return -1;
   }
@@ -461,6 +466,11 @@ void TrackerProcessor::RemoveLostTrack() {
 
     // Check if track is alive based on sensor visibility
     bool any_visible = track.IsSvsVisible() || track.IsBevVisible() || track.IsRadarVisible();
+    if (track.IsUsed()) {
+      std::cout << "RemoveLostTrack::Track ID: " << track.GetId() << ", Used: " << track.IsUsed()
+                << ", DynamicFlag: " << dynamic_flag << ", LostCntFlag: " << lost_cnt_flag
+                << ", AnyVisible: " << any_visible << std::endl;
+    }
 
     if (track.IsUsed() && (dynamic_flag || lost_cnt_flag || !any_visible)) {
       track.Reset();
@@ -470,7 +480,7 @@ void TrackerProcessor::RemoveLostTrack() {
   std::cout << "RemoveLostTrack::Removed " << del_track_cnt << " lost tracks."<< std::endl;
 }
 
-void TrackerProcessor::UpdateMotSupplementState(uint64_t meas_time,
+void TrackerProcessor::UpdateMotSupplementState(double meas_time,
                                                 std::vector<bool>* is_fill) {
   if (is_fill == nullptr) {
     return;

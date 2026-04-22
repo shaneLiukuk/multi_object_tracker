@@ -24,7 +24,7 @@ class Track {
 
   void Update(const FusedObject& obs);
 
-  void UpdateWithoutSensorObject(SensorType sensor_type, uint64_t meas_time);
+  void UpdateWithoutSensorObject(SensorType sensor_type, double meas_time);
 
   void GetEstimate(float* x, float* y, float* vx, float* vy) const;
 
@@ -72,8 +72,8 @@ class Track {
   void SetFusedType(ObjectType type) { status_.fused_type = type; }
   ObjectType GetFusedType() const { return status_.fused_type; }
 
-  void SetLastTrackingTime(uint64_t time) { status_.last_tracking_time = time; }
-  uint64_t GetLastTrackingTime() const { return status_.last_tracking_time; }
+  void SetLastTrackingTime(double time) { status_.last_tracking_time = time; }
+  double GetLastTrackingTime() const { return status_.last_tracking_time; }
 
   // ========== Sensor History Management (new design) ==========
   // Add observation to sensor-specific history
@@ -87,7 +87,7 @@ class Track {
   FusedObject GetPreviousSensorObject(SensorType sensor_type, int32_t offset) const;
 
   // Prune old observations from sensor history (remove observations older than threshold)
-  void PruneSensorHistory(SensorType sensor_type, uint64_t current_time);
+  void PruneSensorHistory(SensorType sensor_type, double current_time);
 
   // ========== Fused Track Object (replaces estimated_) ==========
   FusedObject& GetFusedObject() { return fused_object_; }
@@ -136,9 +136,9 @@ class Track {
   double invisibility_period_svs_;
   double invisibility_period_bev_;
   double invisibility_period_radar_;
-  uint64_t last_obs_time_svs_;
-  uint64_t last_obs_time_bev_;
-  uint64_t last_obs_time_radar_;
+  double last_obs_time_svs_;
+  double last_obs_time_bev_;
+  double last_obs_time_radar_;
 
   // ========== Sensor History (new design - separate per sensor) ==========
   static constexpr size_t kMaxSensorHistorySize = 30;

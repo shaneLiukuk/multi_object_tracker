@@ -97,17 +97,25 @@ void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg) {
   if (!fusion_component_.GetConfig().enable_svs) {
     return;
   }
+  //
+  std::vector<FusedObject> svs_fobjects;
+  svs_fobjects.clear();
+  //
   ObjectSet obj_set{};
   obj_set.time_stamp = svs_msg->time_stamp;
   obj_set.time_stamp_raw = svs_msg->time_stamp_raw;
   obj_set.frame_index = svs_msg->frame_index;
-  obj_set.object_cnt = sizeof(obj_set.object_set) / sizeof(ObjectInfo);
+  obj_set.object_cnt = svs_msg->object_cnt;
   if (svs_msg->object_cnt < obj_set.object_cnt) {
     obj_set.object_cnt = svs_msg->object_cnt;
   }
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
                       "Svs Cnt %d",obj_set.object_cnt);
   for (uint8_t i = 0; i < obj_set.object_cnt; ++i) {
+    // if (static_cast<float>(svs_msg->object_set[i].distance_x) > 2 || static_cast<float>(svs_msg->object_set[i].distance_x) < -2) {
+    //   // std::cout << "Svs object " << i << " distance_x out of range: " << svs_msg->object_set[i].distance_x << std::endl;
+    //   continue;
+    // }
     obj_set.object_set[i].distance_x = svs_msg->object_set[i].distance_x;
     obj_set.object_set[i].distance_y = svs_msg->object_set[i].distance_y;
     obj_set.object_set[i].tracking_id = svs_msg->object_set[i].tracking_id;
@@ -125,9 +133,22 @@ void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg) {
     obj_set.object_set[i].motion_status = svs_msg->object_set[i].motion_status;
     obj_set.object_set[i].valid_status = svs_msg->object_set[i].valid_status;
     obj_set.object_set[i].target_source = svs_msg->object_set[i].target_source;
+
+    FusedObject tmp;
+    tmp.object.x = obj_set.object_set[i].distance_x;
+    tmp.object.y = obj_set.object_set[i].distance_y;
+    tmp.object.length = obj_set.object_set[i].length;
+    tmp.object.width = obj_set.object_set[i].width;
+    tmp.object.height = obj_set.object_set[i].height;
+    tmp.object.yaw = obj_set.object_set[i].yaw;
+    // std::cout << "x: " << tmp.object.x << ", y: " << tmp.object.y << ", length: " << tmp.object.length
+    //           << ", width: " << tmp.object.width << ", height: " << tmp.object.height
+    //           << ", yaw: " << tmp.object.yaw << std::endl;
+
+    svs_fobjects.push_back(tmp);
   }
   std::memcpy(&multi_object_fusion_input.svs_object_in, &obj_set, sizeof(obj_set));
-
+  rviz_display_->PublishSVS(svs_fobjects);
   svs_updated_ = true;
 }
 
@@ -262,13 +283,26 @@ void FusionNode::GlobalPoseCallback(
 
 void FusionNode::TimerCallback() {
   frame_count_++;
-  // Algo Interface
-  fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
-  // Display Data
   std::vector<FusedObject> results;
-  fusion_component_.GetFusionResults(&results);
   FrameData frame_data;
-  fusion_component_.GetFrameData(&frame_data);
+  static double lastest_global_pose_time = 0.0;
+  static double lastest_svs_time = 0.0;
+  // uint64 -> ms
+  const uint64_t min_time_interavl = 10;
+  // if (multi_object_fusion_input.global_pose_in.time_stamp_can - lastest_global_pose_time > min_time_interavl && multi_object_fusion_input.svs_object_in.time_stamp_raw > min_time_interavl) {
+  //   // Algo Interface
+  //   fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
+  //   // Display Data
+  //   fusion_component_.GetFusionResults(&results);
+  //   fusion_component_.GetFrameData(&frame_data);
+  //   // RCLCPP_WARN(this->get_logger(),
+  //   //             "Global pose time updated: %f",
+  //   //             multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3);
+  //   // update lastest timestamp
+  //   lastest_global_pose_time = multi_object_fusion_input.global_pose_in.time_stamp_can;
+  //   lastest_svs_time = multi_object_fusion_input.svs_object_in.time_stamp_raw;
+  // }
+
   // Publish visualization
   if (rviz_display_) {
     GlobalPose pose;

@@ -130,7 +130,7 @@ void OdFusionComponent::ProcessSvs(const SvsFrame& svs_frame,
   //   return;
   // }
 
-  uint64_t meas_time = svs_pose.time_stamp;
+  double meas_time = svs_pose.time_stamp;
   std::vector<FusedObject> results;
   tracker_processor_->Process(observations, svs_pose, meas_time,
                                SensorType::kSvs, &results);
@@ -149,7 +149,7 @@ void OdFusionComponent::ProcessBev(const BevFrame& bev_frame,
   //   return;
   // }
 
-  uint64_t meas_time = bev_pose.time_stamp;
+  double meas_time = bev_pose.time_stamp;
   std::vector<FusedObject> results;
   tracker_processor_->Process(observations, bev_pose, meas_time,
                                SensorType::kBev, &results);
@@ -168,7 +168,7 @@ void OdFusionComponent::ProcessRadar(const RadarFrame& radar_frame,
   //   return;
   // }
 
-  uint64_t meas_time = radar_pose.time_stamp;
+  double meas_time = radar_pose.time_stamp;
   std::vector<FusedObject> results;
   tracker_processor_->Process(observations, radar_pose, meas_time,
                                SensorType::kRadar, &results);
@@ -182,8 +182,8 @@ void OdFusionComponent::Process(const MultiObjectTrackerInput& input, MultiObjec
   
   // AddGlobalPoseBufferToCache(input.global_pose_buffer_in);
   AddGlobalPoseToCache(input.global_pose_in);
-  frame_data_.Reset();
   
+  frame_data_.Reset();
   if(!msg2InterFrame(input, frame_data_)) {
     std::cout << "ERROR:Valid frame is empty." << std::endl;
     return;

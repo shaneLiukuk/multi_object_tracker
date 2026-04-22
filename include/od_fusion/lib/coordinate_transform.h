@@ -25,21 +25,13 @@ inline void GlobalToLocal(const GlobalPose& pose, float global_x, float global_y
 }
 
 inline void CartesianToIso8855(float x, float y, float* iso_x, float* iso_y) {
-  *iso_x = -y;
-  *iso_y = x;
+  *iso_x = y;
+  *iso_y = -x;
 }
 
 inline void Iso8855ToCartesian(float iso_x, float iso_y, float* x, float* y) {
-  *x = iso_y;
-  *y = -iso_x;
-}
-
-inline float YawCs1ToIso8855(float yaw_cs1) {
-  return -yaw_cs1;
-}
-
-inline float YawIso8855ToCs3(float yaw_iso8855) {
-  return -yaw_iso8855;
+  *x = -iso_y;
+  *y = iso_x;
 }
 
 inline float NormalizeAngle2Pi(float angle) {
@@ -51,6 +43,17 @@ inline float NormalizeAngle2Pi(float angle) {
   }
   return angle;
 }
+
+inline float YawCs1ToIso8855(float yaw_cs1) {
+  float b = -yaw_cs1;
+  return NormalizeAngle2Pi(b);
+}
+
+inline float YawIso8855ToCs3(float yaw_iso8855) {
+  return -yaw_iso8855;
+}
+
+
 
 inline void LocalToGlobalVel(const GlobalPose& pose, float local_vx, float local_vy,
                              float* global_vx, float* global_vy) {

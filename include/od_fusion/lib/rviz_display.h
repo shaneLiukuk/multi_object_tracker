@@ -4,8 +4,22 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <geometry_msgs/msg/point.hpp>
 #include "od_fusion/base/obstacle_constant.h"
 #include "od_fusion/lib/coordinate_transform.h"
+#include "od_fusion/lib/coordinate_transform.h"
+
+template <typename T>
+std::string NumToStr(T num, int precision) {
+  std::stringstream ss;
+  ss.setf(std::ios::fixed, std::ios::floatfield);
+  ss.precision(precision);
+  std::string st;
+  ss << num;
+  ss >> st;
+
+  return st;
+}
 
 namespace perception {
 namespace fusion {
@@ -25,7 +39,7 @@ class RvizDisplay {
   void PublishFusionResults(const std::vector<FusedObject>& results);
 
   void PublishAll(const FrameData& frame_data, const std::vector<FusedObject>& results, const GlobalPose& pose);
-
+  void PublishSVS(const std::vector<FusedObject>& svs_fobjects);
  private:
   void PublishMarkers(visualization_msgs::msg::MarkerArray::SharedPtr markers);
 
@@ -48,8 +62,12 @@ class RvizDisplay {
   void GetObjectCorners(float x, float y, float length, float width, float yaw,
                         std::vector<geometry_msgs::msg::Point>* corners);
 
+  visualization_msgs::msg::Marker DrawRotatedBoxMarker(int id, const std::string& frame_id, double cx, double cy, double yaw, double length,
+                                                       double width, double height, const std_msgs::msg::ColorRGBA& color);                        
+
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr svs_pub_;
 
   std::vector<std_msgs::msg::ColorRGBA> svs_colors_;
   std::vector<std_msgs::msg::ColorRGBA> bev_colors_;

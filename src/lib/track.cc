@@ -158,7 +158,7 @@ void Track::Update(const FusedObject& obs) {
 
   // Update tracking period
   if (obs.object.timestamp > status_.last_tracking_time) {
-    double time_diff = static_cast<double>(obs.object.timestamp - status_.last_tracking_time) / 1000.0;
+    double time_diff = static_cast<double>(obs.object.timestamp - status_.last_tracking_time);
     tracking_period_ += time_diff;
   }
 
@@ -174,13 +174,14 @@ void Track::Update(const FusedObject& obs) {
   }
 }
 
-void Track::UpdateWithoutSensorObject(SensorType sensor_type, uint64_t meas_time) {
+void Track::UpdateWithoutSensorObject(SensorType sensor_type, double meas_time) {
   // Update invisibility period for the sensor that didn't provide measurement
   double time_diff = 0.0;
   if (meas_time > status_.last_tracking_time) {
-    time_diff = static_cast<double>(meas_time - status_.last_tracking_time) / 1000.0;
+    time_diff = static_cast<double>(meas_time - status_.last_tracking_time);
   }
-
+  std::cout << "UpdateWithoutSensorObject::Track ID: " << track_id_ << ", Sensor: " << static_cast<int>(sensor_type)
+            << std::fixed << ", TimeDiff: " << time_diff << ",meas_time: " << meas_time << ",last_tracking_time: " << status_.last_tracking_time << std::endl;
   switch (sensor_type) {
     case SensorType::kSvs:
       invisibility_period_svs_ = time_diff;
@@ -366,7 +367,7 @@ FusedObject Track::GetPreviousSensorObject(SensorType sensor_type, int32_t offse
   return history[idx];
 }
 
-void Track::PruneSensorHistory(SensorType sensor_type, uint64_t current_time) {
+void Track::PruneSensorHistory(SensorType sensor_type, double current_time) {
   // Get the max invisible period threshold for this sensor
   float max_period = 0.0f;
   switch (sensor_type) {
@@ -403,7 +404,8 @@ void Track::PruneSensorHistory(SensorType sensor_type, uint64_t current_time) {
 
   // Remove old observations (older than threshold)
   while (!history->empty()) {
-    double time_diff = static_cast<double>(current_time - history->front().object.timestamp) / 1000.0;
+    double time_diff = static_cast<double>(current_time - history->front().object.timestamp);
+    std::cout << "Track::PruneSensorHistory:Time diff: " << std::fixed << time_diff << std::endl;
     if (time_diff > threshold) {
       history->pop_front();
     } else {
@@ -430,10 +432,10 @@ void Track::CheckStability() {
   status_.state = state;
 
   // Update alive status based on sensor visibility
-  bool any_visible = IsSvsVisible() || IsBevVisible() || IsRadarVisible();
-  if (!any_visible && status_.lst >= 10) {
-    is_alive_ = false;
-  }
+  // bool any_visible = IsSvsVisible() || IsBevVisible() || IsRadarVisible();
+  // if (!any_visible && status_.lst >= 10) {
+  //   is_alive_ = false;
+  // }
 }
 
 }  // namespace fusion

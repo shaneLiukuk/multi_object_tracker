@@ -25,7 +25,7 @@ std_msgs::msg::ColorRGBA MakeColor(float r, float g, float b, float a) {
 RvizDisplay::RvizDisplay(rclcpp::Node::SharedPtr node, const std::string& topic)
     : node_(node), marker_id_(0) {
   publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(topic, 10);
-
+  svs_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/svs_markers", 10);
   // SVS colors - Blue
   svs_colors_.push_back(MakeColor(0.0f, 0.0f, 1.0f, 0.8f));
 
@@ -116,6 +116,154 @@ void RvizDisplay::PublishFusionResults(const std::vector<FusedObject>& results) 
   }
 
   PublishMarkers(markers);
+}
+
+void RvizDisplay::PublishSVS(const std::vector<FusedObject>& svs_fobjects) {
+  visualization_msgs::msg::MarkerArray marker_array;
+  const std::string frame_id = "odom";  // 不要带 /
+
+  int id = 0;  // 统一ID
+  static int last_id = 0;
+
+  // ==============================
+  // 1. 先发布所有新 marker
+  // ==============================
+  for (size_t i = 0; i < svs_fobjects.size(); ++i) {
+    const auto& obj = svs_fobjects[i];
+    double vel_x = obj.object.vx;
+    double vel_y = obj.object.vy;
+    double abs_velocity = std::hypot(vel_x, vel_y);
+    float dis_x = obj.object.x;
+    float dis_y = obj.object.y;
+    CartesianToIso8855(obj.object.x, obj.object.y, &dis_x, &dis_y);
+
+    // --------------------------
+    // Text Marker
+    // --------------------------
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.header.frame_id = frame_id;
+    text_marker.ns = "svs_cam_text";
+    text_marker.id = id++;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+    text_marker.pose.orientation.w = 1.0;
+    text_marker.pose.position.x = dis_x;
+    text_marker.pose.position.y = dis_y;
+    text_marker.pose.position.z = 0.5;
+    text_marker.scale.z = 1.0;
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 1.0;
+    text_marker.color.a = 1.0;
+    text_marker.text = "ID: " + std::to_string(obj.object.id) +
+                       "\nx: " + NumToStr<float>(dis_x, 2) +
+                       "; y: " + NumToStr<float>(dis_y, 2) +
+                       "\nv: " + NumToStr<float>(abs_velocity, 2) + " km/h";
+    marker_array.markers.push_back(text_marker);
+
+    // --------------------------
+    // Point Marker
+    // --------------------------
+    visualization_msgs::msg::Marker point_marker;
+    point_marker.header.frame_id = frame_id;
+    point_marker.ns = "svs_cam_pnt";
+    point_marker.id = id++;
+    point_marker.type = visualization_msgs::msg::Marker::CYLINDER;
+    point_marker.action = visualization_msgs::msg::Marker::ADD;
+    point_marker.pose.orientation.w = 1.0;
+    point_marker.pose.position.x = dis_x;
+    point_marker.pose.position.y = dis_y;
+    point_marker.pose.position.z = 0.0;
+    point_marker.scale.x = 0.8;
+    point_marker.scale.y = 0.8;
+    point_marker.scale.z = 0.8;
+    point_marker.color.r = 0.0;
+    point_marker.color.g = 0.0;
+    point_marker.color.b = 1.0;
+    point_marker.color.a = 1.0;
+    marker_array.markers.push_back(point_marker);
+
+    // --------------------------
+    // Box Marker
+    // --------------------------
+    std_msgs::msg::ColorRGBA blue;
+    blue.r = 0.0;
+    blue.g = 0.5;
+    blue.b = 1.0;
+    blue.a = 1.0;
+
+    // float yaw = -obj.object.yaw + M_PI / 2;
+    float yawIso8855 = YawCs1ToIso8855(obj.object.yaw);
+
+    auto box_marker = DrawRotatedBoxMarker(
+        id++, frame_id, dis_x, dis_y,
+        yawIso8855,
+        obj.object.length, obj.object.width, 0.1, blue);
+
+    marker_array.markers.push_back(box_marker);
+  }
+
+  // ==============================
+  // 2. 删除所有旧的、多余的 marker（关键修复）
+  // ==============================
+  for (int del_id = id; del_id < last_id; ++del_id) {
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = frame_id;
+    m.action = visualization_msgs::msg::Marker::DELETE;
+    m.id = del_id;
+
+    // 按 id 归属设置 ns（3种都要删！）
+    int type = del_id % 3;
+    if (type == 0) m.ns = "svs_cam_text";
+    else if (type == 1) m.ns = "svs_cam_pnt";
+    else m.ns = "svs_cam_box";
+
+    marker_array.markers.push_back(m);
+  }
+
+  last_id = id;
+  svs_pub_->publish(marker_array);
+}
+
+visualization_msgs::msg::Marker RvizDisplay::DrawRotatedBoxMarker(
+    int id, const std::string& frame_id, double cx, double cy, double yaw, double length, double width, double z = 0.1,
+    const std_msgs::msg::ColorRGBA& color = [] {
+      std_msgs::msg::ColorRGBA c;
+      c.r = 1.0;
+      c.g = 1.0;
+      c.b = 0.0;
+      c.a = 1.0;
+      return c;
+    }()) {
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = frame_id;
+  marker.ns = "svs_cam_box";
+  marker.id = id;
+  marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+
+  marker.scale.x = 0.1;  // 线宽
+  marker.color = color;
+
+  double c = std::cos(yaw);
+  double s = std::sin(yaw);
+
+  // 以中心为原点，局部四角点
+  std::vector<std::pair<double, double>> corners = {
+      {length / 2, width / 2}, {length / 2, -width / 2}, {-length / 2, -width / 2}, {-length / 2, width / 2}};
+
+  for (const auto& corner : corners) {
+    geometry_msgs::msg::Point p;
+    p.x = cx + (corner.first * c - corner.second * s);
+    p.y = cy + (corner.first * s + corner.second * c);
+    p.z = z;
+    marker.points.push_back(p);
+  }
+
+  // 闭合矩形（重复第一个点）
+  marker.points.push_back(marker.points.front());
+
+  return marker;
 }
 
 void RvizDisplay::PublishAll(const FrameData& frame_data,
@@ -231,7 +379,15 @@ visualization_msgs::msg::Marker RvizDisplay::CreateBoxMarker(
   marker.pose.position.x = obj.object.x;
   marker.pose.position.y = obj.object.y;
   marker.pose.position.z = 0.0;
-
+// yaw = 绕 Z 轴（竖直向上轴）的旋转角（偏航角），单位弧度（rad）
+// 旋转顺序：ROS 默认 Z-Y-X（yaw→pitch→roll） 固定轴旋转
+// 零点：yaw = 0 时，物体正朝向 X 轴正方向（朝前）
+// 正负方向（右手定则，ROS 铁则）
+// yaw > 0：逆时针（向左）旋转
+// yaw < 0：顺时针（向右）旋转
+// 角度范围：
+// [−π, π]
+// （-180° ~ +180°）
   // Orientation from yaw
   float yaw = obj.object.yaw;
   marker.pose.orientation.x = 0.0;

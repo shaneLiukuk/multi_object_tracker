@@ -26,8 +26,9 @@ RvizDisplay::RvizDisplay(rclcpp::Node::SharedPtr node, const std::string& topic)
     : node_(node), marker_id_(0) {
   publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(topic, 10);
   svs_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/svs_markers", 10);
+  svs2_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/svs_markers_2", 10);
   // SVS colors - Blue
-  svs_colors_.push_back(MakeColor(0.0f, 0.0f, 1.0f, 0.8f));
+  svs_colors_.push_back(MakeColor(1.0f, 0.0f, 0.0f, 0.8f));
 
   // BEV colors - Green
   bev_colors_.push_back(MakeColor(0.0f, 1.0f, 0.0f, 0.8f));
@@ -197,8 +198,8 @@ void RvizDisplay::PublishSVS(const std::vector<FusedObject>& svs_fobjects) {
 
     auto box_marker = DrawRotatedBoxMarker(
         id++, frame_id, dis_x, dis_y,
-        yawIso8855,
-        obj.object.length, obj.object.width, 0.1, blue);
+        yawIso8855, 0.3, 
+        obj.object.length, obj.object.width, 0.1,blue);
 
     marker_array.markers.push_back(box_marker);
   }
@@ -226,7 +227,7 @@ void RvizDisplay::PublishSVS(const std::vector<FusedObject>& svs_fobjects) {
 }
 
 visualization_msgs::msg::Marker RvizDisplay::DrawRotatedBoxMarker(
-    int id, const std::string& frame_id, double cx, double cy, double yaw, double length, double width, double z = 0.1,
+    int id, const std::string& frame_id, double cx, double cy, double yaw, double line_width, double length, double width, double z = 0.1,
     const std_msgs::msg::ColorRGBA& color = [] {
       std_msgs::msg::ColorRGBA c;
       c.r = 1.0;
@@ -237,12 +238,12 @@ visualization_msgs::msg::Marker RvizDisplay::DrawRotatedBoxMarker(
     }()) {
   visualization_msgs::msg::Marker marker;
   marker.header.frame_id = frame_id;
-  marker.ns = "svs_cam_box";
+  marker.ns = "box";
   marker.id = id;
   marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
   marker.action = visualization_msgs::msg::Marker::ADD;
 
-  marker.scale.x = 0.1;  // 线宽
+  marker.scale.x = line_width;  // 线宽
   marker.color = color;
 
   double c = std::cos(yaw);
@@ -266,75 +267,176 @@ visualization_msgs::msg::Marker RvizDisplay::DrawRotatedBoxMarker(
   return marker;
 }
 
+// 核心：直接传入 pub + color + frame_id + 目标列表
+void RvizDisplay::PublishObjectsToRviz(
+    const std::vector<FusedObject>& objects,
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr& marker_pub,
+    const std_msgs::msg::ColorRGBA& box_color,
+    const std::string& frame_id,
+    const std::string& ns,
+    int& last_id)  // 必须传引用，用于删除旧marker
+{
+  visualization_msgs::msg::MarkerArray marker_array;
+  int id = 0;
+  auto now = rclcpp::Clock().now();
+
+  // ==================== 1. 绘制当前目标 ====================
+  for (const auto& fobj : objects) {
+    const auto& obj = fobj.object;
+    double vel_x = obj.vx;
+    double vel_y = obj.vy;
+    double abs_velocity = std::hypot(vel_x, vel_y);
+
+    float dis_x = obj.x;
+    float dis_y = obj.y;
+    float yawIso8855 = obj.yaw;
+
+    // -------------------- 文字 --------------------
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.header.frame_id = frame_id;
+    text_marker.header.stamp = now;
+    text_marker.ns = ns + "_text";
+    text_marker.id = id++;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+    text_marker.pose.orientation.w = 1.0;
+    text_marker.pose.position.x = dis_x;
+    text_marker.pose.position.y = dis_y;
+    text_marker.pose.position.z = 0.5;
+    text_marker.scale.z = 1.0;
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 1.0;
+    text_marker.color.a = 1.0;
+    text_marker.text = "ID: " + std::to_string(obj.id) +
+                       "\nx: " + NumToStr(dis_x, 2) +
+                       "\ny: " + NumToStr(dis_y, 2) +
+                       "\nv: " + NumToStr(abs_velocity, 2) + " km/h";
+    marker_array.markers.push_back(text_marker);
+
+    // -------------------- 圆柱点 --------------------
+    visualization_msgs::msg::Marker point_marker;
+    point_marker.header.frame_id = frame_id;
+    point_marker.header.stamp = now;
+    point_marker.ns = ns + "_point";
+    point_marker.id = id++;
+    point_marker.type = visualization_msgs::msg::Marker::CYLINDER;
+    point_marker.action = visualization_msgs::msg::Marker::ADD;
+    point_marker.pose.orientation.w = 1.0;
+    point_marker.pose.position.x = dis_x;
+    point_marker.pose.position.y = dis_y;
+    point_marker.pose.position.z = 0.0;
+    point_marker.scale.x = 0.8;
+    point_marker.scale.y = 0.8;
+    point_marker.scale.z = 0.8;
+    point_marker.color.r = 0.0;
+    point_marker.color.g = 0.0;
+    point_marker.color.b = 1.0;
+    point_marker.color.a = 1.0;
+    marker_array.markers.push_back(point_marker);
+
+    // -------------------- 旋转包围盒（使用传入的颜色） --------------------
+    auto box_marker = DrawRotatedBoxMarker(id++, frame_id, dis_x, dis_y, yawIso8855, 0.1,
+                                           obj.length, obj.width, 0.1, box_color);
+    marker_array.markers.push_back(box_marker);
+  }
+
+  // ==================== 2. 删除旧marker ====================
+  for (int del_id = id; del_id < last_id; ++del_id) {
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = frame_id;
+    m.header.stamp = now;
+    m.action = visualization_msgs::msg::Marker::DELETE;
+    m.id = del_id;
+
+    int type = del_id % 3;
+    if (type == 0) m.ns = ns + "_text";
+    else if (type == 1) m.ns = ns + "_point";
+    else m.ns = ns + "_box";  // 这里修复！不再写死"box"
+
+    marker_array.markers.push_back(m);
+  }
+
+  last_id = id;
+  marker_pub->publish(marker_array);
+}
+
 void RvizDisplay::PublishAll(const FrameData& frame_data,
                               const std::vector<FusedObject>& results, const GlobalPose& pose) {
   auto markers = std::make_shared<visualization_msgs::msg::MarkerArray>();
 
+  std::string frame_id = "odom";
+  static int last_id = 0;
   // SVS observations - Blue
   std::vector<FusedObject> svs_fobjects;
   for (const auto& obj : frame_data.svs_frame.svs_object_list) {
     FusedObject fobj;
     fobj.object = obj.object;
     GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
+    float dis_x = fobj.object.x;
+    float dis_y = fobj.object.y;
+    CartesianToIso8855(dis_x, dis_y, &fobj.object.x, &fobj.object.y);
     fobj.svs_match_id = obj.object.id + 1;
     fobj.obj_det_prop = ObjDetProp::kSoleSvs;
     svs_fobjects.push_back(fobj);
   }
-  auto svs_markers = CreateBoxMarkers(svs_fobjects, "svs", svs_colors_);
-  markers->markers.insert(markers->markers.end(), svs_markers.begin(), svs_markers.end());
+  const auto& color = svs_colors_.empty() ? fusion_colors_[0] : svs_colors_[0];
+  PublishObjectsToRviz(svs_fobjects, svs2_pub_, color, frame_id, "svs", last_id);
+  // auto svs_markers = CreateBoxMarkers(svs_fobjects, "svs", svs_colors_);
+  // markers->markers.insert(markers->markers.end(), svs_markers.begin(), svs_markers.end());
 
-  // BEV observations - Green
-  std::vector<FusedObject> bev_fobjects;
-  for (const auto& obj : frame_data.bev_frame.bev_object_list) {
-    FusedObject fobj;
-    fobj.object = obj.object;
-    fobj.bev_match_id = obj.object.id + 1;
-    fobj.obj_det_prop = ObjDetProp::kSoleBev;
-    bev_fobjects.push_back(fobj);
-  }
-  auto bev_markers = CreateBoxMarkers(bev_fobjects, "bev", bev_colors_);
-  markers->markers.insert(markers->markers.end(), bev_markers.begin(), bev_markers.end());
+  // // BEV observations - Green
+  // std::vector<FusedObject> bev_fobjects;
+  // for (const auto& obj : frame_data.bev_frame.bev_object_list) {
+  //   FusedObject fobj;
+  //   fobj.object = obj.object;
+  //   fobj.bev_match_id = obj.object.id + 1;
+  //   fobj.obj_det_prop = ObjDetProp::kSoleBev;
+  //   bev_fobjects.push_back(fobj);
+  // }
+  // auto bev_markers = CreateBoxMarkers(bev_fobjects, "bev", bev_colors_);
+  // markers->markers.insert(markers->markers.end(), bev_markers.begin(), bev_markers.end());
 
-  // Radar observations - Red
-  std::vector<FusedObject> radar_fobjects;
-  for (const auto& obj : frame_data.radar_frame.radar_object_list) {
-    FusedObject fobj;
-    fobj.object = obj.object;
-    fobj.radar_match_id = obj.object.id + 1;
-    fobj.obj_det_prop = ObjDetProp::kSoleRadar;
-    radar_fobjects.push_back(fobj);
-  }
-  auto radar_markers = CreateBoxMarkers(radar_fobjects, "radar", radar_colors_);
-  markers->markers.insert(markers->markers.end(), radar_markers.begin(), radar_markers.end());
+  // // Radar observations - Red
+  // std::vector<FusedObject> radar_fobjects;
+  // for (const auto& obj : frame_data.radar_frame.radar_object_list) {
+  //   FusedObject fobj;
+  //   fobj.object = obj.object;
+  //   fobj.radar_match_id = obj.object.id + 1;
+  //   fobj.obj_det_prop = ObjDetProp::kSoleRadar;
+  //   radar_fobjects.push_back(fobj);
+  // }
+  // auto radar_markers = CreateBoxMarkers(radar_fobjects, "radar", radar_colors_);
+  // markers->markers.insert(markers->markers.end(), radar_markers.begin(), radar_markers.end());
 
-  // Fusion results - Yellow
-  std::vector<FusedObject> fused_res;
-  for (const auto& obj : results) {
-    FusedObject fobj;
-    fobj.object = obj.object;
-    GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
-    fused_res.push_back(fobj);
-  }
-  auto fusion_markers = CreateBoxMarkers(fused_res, "fusion", fusion_colors_);
-  markers->markers.insert(markers->markers.end(), fusion_markers.begin(), fusion_markers.end());
+  // // Fusion results - Yellow
+  // std::vector<FusedObject> fused_res;
+  // for (const auto& obj : results) {
+  //   FusedObject fobj;
+  //   fobj.object = obj.object;
+  //   GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
+  //   fused_res.push_back(fobj);
+  // }
+  // auto fusion_markers = CreateBoxMarkers(fused_res, "fusion", fusion_colors_);
+  // markers->markers.insert(markers->markers.end(), fusion_markers.begin(), fusion_markers.end());
 
-  // Text labels for all
-  int32_t text_id = 0;
+  // // Text labels for all
+  // int32_t text_id = 0;
 
-  for (const auto& obj : svs_fobjects) {
-    markers->markers.push_back(CreateTextMarker(obj, "svs_text", text_id++));
-  }
-  for (const auto& obj : bev_fobjects) {
-    markers->markers.push_back(CreateTextMarker(obj, "bev_text", text_id++));
-  }
-  for (const auto& obj : radar_fobjects) {
-    markers->markers.push_back(CreateTextMarker(obj, "radar_text", text_id++));
-  }
-  for (const auto& obj : results) {
-    markers->markers.push_back(CreateTextMarker(obj, "fusion_text", text_id++));
-  }
+  // for (const auto& obj : svs_fobjects) {
+  //   markers->markers.push_back(CreateTextMarker(obj, "svs_text", text_id++));
+  // }
+  // for (const auto& obj : bev_fobjects) {
+  //   markers->markers.push_back(CreateTextMarker(obj, "bev_text", text_id++));
+  // }
+  // for (const auto& obj : radar_fobjects) {
+  //   markers->markers.push_back(CreateTextMarker(obj, "radar_text", text_id++));
+  // }
+  // for (const auto& obj : results) {
+  //   markers->markers.push_back(CreateTextMarker(obj, "fusion_text", text_id++));
+  // }
 
-  PublishMarkers(markers);
+  // PublishMarkers(markers);
 }
 
 void RvizDisplay::PublishMarkers(visualization_msgs::msg::MarkerArray::SharedPtr markers) {
@@ -352,7 +454,7 @@ std::vector<visualization_msgs::msg::Marker> RvizDisplay::CreateBoxMarkers(
     const std::vector<std_msgs::msg::ColorRGBA>& colors) {
   std::vector<visualization_msgs::msg::Marker> result;
   int32_t id = marker_id_;
-
+  
   for (size_t i = 0; i < objects.size(); ++i) {
     const auto& obj = objects[i];
     const auto& color = colors.empty() ? fusion_colors_[0] : colors[i % colors.size()];

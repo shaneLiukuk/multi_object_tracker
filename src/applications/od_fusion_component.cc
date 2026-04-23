@@ -344,11 +344,11 @@ SvsFrame OdFusionComponent::ConvertObjectSetToSvsFrame(const ObjectSet& msg, con
     svs_obj.timestamp_raw = msg.time_stamp_raw * 1e-3;
     svs_obj.object.timestamp = msg.time_stamp * 1e-3;
     svs_obj.object.id = static_cast<uint8_t>(obj_info.tracking_id);
-    if (IsInValidRange(obj_info.distance_x, obj_info.distance_y)) {
-      // std::cout << "X Range: [ " << kSensorRangeXMin << ", " << kSensorRangeXMax << " ]\n";
-      // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
-      continue;
-    }
+    // if (IsInValidRange(obj_info.distance_x, obj_info.distance_y)) {
+    //   // std::cout << "X Range: [ " << kSensorRangeXMin << ", " << kSensorRangeXMax << " ]\n";
+    //   // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
+    //   continue;
+    // }
     LocalToGlobal(pose, obj_info.distance_x, obj_info.distance_y, &svs_obj.object.x, &svs_obj.object.y);
     // svs_obj.object.x = obj_info.distance_x;
     // svs_obj.object.y = obj_info.distance_y;

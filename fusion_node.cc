@@ -289,19 +289,19 @@ void FusionNode::TimerCallback() {
   static double lastest_svs_time = 0.0;
   // uint64 -> ms
   const uint64_t min_time_interavl = 10;
-  // if (multi_object_fusion_input.global_pose_in.time_stamp_can - lastest_global_pose_time > min_time_interavl && multi_object_fusion_input.svs_object_in.time_stamp_raw > min_time_interavl) {
-  //   // Algo Interface
-  //   fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
-  //   // Display Data
-  //   fusion_component_.GetFusionResults(&results);
-  //   fusion_component_.GetFrameData(&frame_data);
-  //   // RCLCPP_WARN(this->get_logger(),
-  //   //             "Global pose time updated: %f",
-  //   //             multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3);
-  //   // update lastest timestamp
-  //   lastest_global_pose_time = multi_object_fusion_input.global_pose_in.time_stamp_can;
-  //   lastest_svs_time = multi_object_fusion_input.svs_object_in.time_stamp_raw;
-  // }
+  if (multi_object_fusion_input.global_pose_in.time_stamp_can - lastest_global_pose_time > min_time_interavl && multi_object_fusion_input.svs_object_in.time_stamp_raw > min_time_interavl) {
+    // Algo Interface
+    fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
+    // Display Data
+    fusion_component_.GetFusionResults(&results);
+    fusion_component_.GetFrameData(&frame_data);
+    // RCLCPP_WARN(this->get_logger(),
+    //             "Global pose time updated: %f",
+    //             multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3);
+    // update lastest timestamp
+    lastest_global_pose_time = multi_object_fusion_input.global_pose_in.time_stamp_can;
+    lastest_svs_time = multi_object_fusion_input.svs_object_in.time_stamp_raw;
+  }
 
   // Publish visualization
   if (rviz_display_) {

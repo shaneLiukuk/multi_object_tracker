@@ -42,6 +42,12 @@ class RvizDisplay {
   void PublishSVS(const std::vector<FusedObject>& svs_fobjects);
  private:
   void PublishMarkers(visualization_msgs::msg::MarkerArray::SharedPtr markers);
+  // 核心：直接传入 pub + color + frame_id + 目标列表
+  void PublishObjectsToRviz(
+      const std::vector<FusedObject>& objects,
+      rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr& marker_pub,
+      const std_msgs::msg::ColorRGBA& box_color, const std::string& frame_id, const std::string& ns,
+      int& last_id);
 
   std::vector<visualization_msgs::msg::Marker> CreateBoxMarkers(
       const std::vector<FusedObject>& objects,
@@ -62,12 +68,16 @@ class RvizDisplay {
   void GetObjectCorners(float x, float y, float length, float width, float yaw,
                         std::vector<geometry_msgs::msg::Point>* corners);
 
-  visualization_msgs::msg::Marker DrawRotatedBoxMarker(int id, const std::string& frame_id, double cx, double cy, double yaw, double length,
-                                                       double width, double height, const std_msgs::msg::ColorRGBA& color);                        
+  visualization_msgs::msg::Marker DrawRotatedBoxMarker(int id, const std::string& frame_id,
+                                                       double cx, double cy, double yaw,
+                                                       double line_width, double length,
+                                                       double width, double height,
+                                                       const std_msgs::msg::ColorRGBA& color);
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr svs_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr svs2_pub_;
 
   std::vector<std_msgs::msg::ColorRGBA> svs_colors_;
   std::vector<std_msgs::msg::ColorRGBA> bev_colors_;

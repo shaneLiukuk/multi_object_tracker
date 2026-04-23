@@ -148,7 +148,7 @@ void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg) {
     svs_fobjects.push_back(tmp);
   }
   std::memcpy(&multi_object_fusion_input.svs_object_in, &obj_set, sizeof(obj_set));
-  rviz_display_->PublishSVS(svs_fobjects);
+  // rviz_display_->PublishSVS(svs_fobjects);
   svs_updated_ = true;
 }
 

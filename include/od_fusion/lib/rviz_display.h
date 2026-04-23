@@ -70,14 +70,17 @@ class RvizDisplay {
 
   visualization_msgs::msg::Marker DrawRotatedBoxMarker(int id, const std::string& frame_id,
                                                        double cx, double cy, double yaw,
-                                                       double line_width, double length,
-                                                       double width, double height,
+                                                       double line_width, std::string ns,
+                                                       double length, double width, double height,
                                                        const std_msgs::msg::ColorRGBA& color);
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr svs_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr svs2_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr bev2_pub_;
+      rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr radar2_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr fusion_pub_;
 
   std::vector<std_msgs::msg::ColorRGBA> svs_colors_;
   std::vector<std_msgs::msg::ColorRGBA> bev_colors_;

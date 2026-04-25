@@ -28,13 +28,18 @@ class TrackerProcessor {
 
   void GetResults(std::vector<FusedObject>* results) const;
 
+  void Update(const std::vector<FusedObject>& observations, const Eigen::MatrixXi& match_result,
+              SensorType sensor_type, double meas_time, std::vector<int32_t>& meas_assoc_flag);
+  void Prune(double meas_time);
+  void Spawn(const std::vector<FusedObject>& observations, const std::vector<int>& meas_valid_flag,
+             const GlobalPose& glb, SensorType sensor_type);
+  void checkAndPublish(double meas_time, std::vector<FusedObject>* output); 
  private:
   // Data association
   void AssociateTracks(const std::vector<FusedObject>& observations,
                      double meas_time,
                      SensorType sensor_type,
                      Eigen::MatrixXi* match_result);
-
   // Update tracks that received measurements
   void UpdateAssignedTracks(const std::vector<FusedObject>& observations,
                            const Eigen::MatrixXi& match_result,

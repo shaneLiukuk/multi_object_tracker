@@ -180,29 +180,29 @@ void Track::UpdateWithoutSensorObject(SensorType sensor_type, double meas_time) 
   if (meas_time > status_.last_tracking_time) {
     time_diff = static_cast<double>(meas_time - status_.last_tracking_time);
   }
-  std::cout << "UpdateWithoutSensorObject::Track ID: " << track_id_ << ", Sensor: " << static_cast<int>(sensor_type)
-            << std::fixed << ", TimeDiff: " << time_diff << ",meas_time: " << meas_time << ",last_tracking_time: " << status_.last_tracking_time << std::endl;
+  // std::cout << "UpdateWithoutSensorObject::Track ID: " << track_id_ << ", Sensor: " << static_cast<int>(sensor_type)
+  //           << std::fixed << ", TimeDiff: " << time_diff << ",meas_time: " << meas_time << ",last_tracking_time: " << status_.last_tracking_time << std::endl;
   switch (sensor_type) {
     case SensorType::kSvs:
-      invisibility_period_svs_ = time_diff;
-      if (time_diff > s_max_invisible_period_svs_) {
+      // invisibility_period_svs_ = time_diff;
+      // if (time_diff > s_max_invisible_period_svs_) {
         status_.lst_svs++;
         status_.cnt_svs = std::max(0, status_.cnt_svs - 1);
-      }
+      // }
       break;
     case SensorType::kBev:
-      invisibility_period_bev_ = time_diff;
-      if (time_diff > s_max_invisible_period_bev_) {
+      // invisibility_period_bev_ = time_diff;
+      // if (time_diff > s_max_invisible_period_bev_) {
         status_.lst_bev++;
         status_.cnt_bev = std::max(0, status_.cnt_bev - 1);
-      }
+      // }
       break;
     case SensorType::kRadar:
-      invisibility_period_radar_ = time_diff;
-      if (time_diff > s_max_invisible_period_radar_) {
+      // invisibility_period_radar_ = time_diff;
+      // if (time_diff > s_max_invisible_period_radar_) {
         status_.lst_radar++;
         status_.cnt_radar = std::max(0, status_.cnt_radar - 1);
-      }
+      // }
       break;
     default:
       break;
@@ -405,7 +405,6 @@ void Track::PruneSensorHistory(SensorType sensor_type, double current_time) {
   // Remove old observations (older than threshold)
   while (!history->empty()) {
     double time_diff = static_cast<double>(current_time - history->front().object.timestamp);
-    std::cout << "Track::PruneSensorHistory:Time diff: " << std::fixed << time_diff << std::endl;
     if (time_diff > threshold) {
       history->pop_front();
     } else {

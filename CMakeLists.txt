@@ -23,7 +23,7 @@ add_definitions(${EIGEN3_DEFINITIONS})
 
 add_executable(${PROJECT_NAME}_node
   fusion_node.cc
-  src/applications/od_fusion_component.cc
+  src/applications/multi_object_tracker_core.cc
   src/lib/tracker_processor.cc
   src/lib/cv_kalman_filter.cc
   src/lib/track.cc
@@ -41,7 +41,7 @@ ament_target_dependencies(${PROJECT_NAME}_node
 
 ament_add_gtest(test_od_fusion
   test/test_od_fusion.cc
-  src/applications/od_fusion_component.cc
+  src/applications/multi_object_tracker_core.cc
   src/lib/tracker_processor.cc
   src/lib/cv_kalman_filter.cc
   src/lib/track.cc

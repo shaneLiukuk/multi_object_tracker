@@ -1,6 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
-#include "od_fusion/applications/od_fusion_component.h"
+#include "od_fusion/applications/multi_object_tracker_core.h"
 #include "od_fusion/lib/rviz_display.h"
 #include "calmcar/msg/object_set.hpp"
 #include "calmcar/msg/perception_bev_object.hpp"
@@ -21,7 +21,7 @@ MultiObjectTrackerInput multi_object_fusion_input{};
 MultiObjectTrackerOutput multi_object_fusion_output{};
 class FusionNode : public rclcpp::Node {
  public:
-  explicit FusionNode(const OdFusionComponent::Config& config);
+  explicit FusionNode(const MultiObjectTracker::Config& config);
 
  private:
   void TimerCallback();
@@ -31,7 +31,7 @@ class FusionNode : public rclcpp::Node {
   void PerceptionCommandCallback(const calmcar::msg::PerceptionCommand::SharedPtr msg);
   void GlobalPoseCallback(const calmcar::msg::GlobalPoseEstimation::SharedPtr msg);
 
-  OdFusionComponent fusion_component_;
+  MultiObjectTracker fusion_component_;
   std::unique_ptr<RvizDisplay> rviz_display_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Subscription<calmcar::msg::ObjectSet>::SharedPtr svs_sub_;
@@ -46,7 +46,7 @@ class FusionNode : public rclcpp::Node {
   bool bev_updated_;
 };
 
-FusionNode::FusionNode(const OdFusionComponent::Config& config)
+FusionNode::FusionNode(const MultiObjectTracker::Config& config)
     : Node("od_fusion_node"),
       fusion_component_(config),
       frame_count_(0),
@@ -133,6 +133,40 @@ void FusionNode::SvsCallback(const calmcar::msg::ObjectSet::SharedPtr svs_msg) {
     obj_set.object_set[i].motion_status = svs_msg->object_set[i].motion_status;
     obj_set.object_set[i].valid_status = svs_msg->object_set[i].valid_status;
     obj_set.object_set[i].target_source = svs_msg->object_set[i].target_source;
+
+        // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
+    // RCLCPP_INFO_STREAM(this->get_logger(), "[SVS Object Assign Info]");
+    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp_raw: " << svs_obj.timestamp_raw);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp    : " << svs_obj.object.timestamp);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "id           : " << static_cast<int>(svs_obj.object.id));
+    // RCLCPP_INFO_STREAM(this->get_logger(), "x            : " << svs_obj.object.x);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "y            : " << svs_obj.object.y);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "vx           : " << svs_obj.object.vx);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "vy           : " << svs_obj.object.vy);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "ax           : " << svs_obj.object.ax);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "ay           : " << svs_obj.object.ay);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "yaw          : " << svs_obj.object.yaw);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "length       : " << svs_obj.object.length);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "width        : " << svs_obj.object.width);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "height       : " << svs_obj.object.height);
+    // RCLCPP_INFO_STREAM(this->get_logger(), "flag         : " << static_cast<int>(svs_obj.object.flag));
+    // RCLCPP_INFO_STREAM(this->get_logger(), "valid_status : " << static_cast<int>(obj_info.valid_status));
+    // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
+    // RCLCPP_INFO_STREAM_THROTTLE(
+    //     this->get_logger(), *this->get_clock(),
+    //     1000,  // 👈 改这里：间隔毫秒数
+    //     "====================================="
+    //         << "\n"
+    //         << "[SVS Object Throttled (10Hz)]" << "\n"
+    //         << "timestamp_raw: " << svs_obj.timestamp_raw << "\n"
+    //         << "timestamp    : " << svs_obj.object.timestamp << "\n"
+    //         << "id           : " << static_cast<int>(svs_obj.object.id) << "\n"
+    //         << "x            : " << svs_obj.object.x << "\n"
+    //         << "y            : " << svs_obj.object.y << "\n"
+    //         << "vx           : " << svs_obj.object.vx << "\n"
+    //         << "vy           : " << svs_obj.object.vy << "\n"
+    //         << "flag         : " << static_cast<int>(svs_obj.object.flag) << "\n"
+    //         << "=====================================");
 
     FusedObject tmp;
     tmp.object.x = obj_set.object_set[i].distance_x;
@@ -285,23 +319,19 @@ void FusionNode::TimerCallback() {
   frame_count_++;
   std::vector<FusedObject> results;
   FrameData frame_data;
-  static double lastest_global_pose_time = 0.0;
-  static double lastest_svs_time = 0.0;
-  // uint64 -> ms
-  const uint64_t min_time_interavl = 10;
-  if (multi_object_fusion_input.global_pose_in.time_stamp_can - lastest_global_pose_time > min_time_interavl && multi_object_fusion_input.svs_object_in.time_stamp_raw > min_time_interavl) {
-    // Algo Interface
-    fusion_component_.Process(multi_object_fusion_input, &multi_object_fusion_output);
+
+  // Algo Interface
+  if (fusion_component_.runProcess(multi_object_fusion_input, &multi_object_fusion_output)) {
     // Display Data
     fusion_component_.GetFusionResults(&results);
     fusion_component_.GetFrameData(&frame_data);
-    // RCLCPP_WARN(this->get_logger(),
-    //             "Global pose time updated: %f",
-    //             multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3);
-    // update lastest timestamp
-    lastest_global_pose_time = multi_object_fusion_input.global_pose_in.time_stamp_can;
-    lastest_svs_time = multi_object_fusion_input.svs_object_in.time_stamp_raw;
+  } else {
+    RCLCPP_WARN(this->get_logger(), "Donot Rcv New Data....");
   }
+
+  // RCLCPP_WARN(this->get_logger(),
+  //             "Global pose time updated: %f",
+  //             multi_object_fusion_input.global_pose_in.time_stamp_can * 1e-3);
 
   // Publish visualization
   if (rviz_display_) {
@@ -317,11 +347,9 @@ void FusionNode::TimerCallback() {
   }
 
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                       "Frame %d: SVS %zu, BEV %zu, output %zu tracks",
-                       frame_count_,
+                       "Frame %d: SVS %zu, BEV %zu, output %zu tracks", frame_count_,
                        frame_data.svs_frame.svs_object_list.size(),
-                       frame_data.bev_frame.bev_object_list.size(),
-                       results.size());
+                       frame_data.bev_frame.bev_object_list.size(), results.size());
 }
 
 }  // namespace fusion
@@ -330,7 +358,7 @@ void FusionNode::TimerCallback() {
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
 
-  perception::fusion::OdFusionComponent::Config config;
+  perception::fusion::MultiObjectTracker::Config config;
   config.enable_svs = true;
   config.enable_bev = true;
   config.enable_radar = false;

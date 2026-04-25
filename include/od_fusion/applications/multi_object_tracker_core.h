@@ -37,7 +37,7 @@ class MultiObjectTrackerOutput {
   WorkingStatus work_status;
 };
 
-class OdFusionComponent {
+class MultiObjectTracker {
  public:
   struct Config {
     bool enable_svs = true;
@@ -45,12 +45,12 @@ class OdFusionComponent {
     bool enable_radar = false;
   };
 
-  explicit OdFusionComponent(const Config& config);
-  ~OdFusionComponent() = default;
+  explicit MultiObjectTracker(const Config& config);
+  ~MultiObjectTracker() = default;
 
   bool Init();
 
-  void Process(const MultiObjectTrackerInput& input, MultiObjectTrackerOutput* output);
+  bool runProcess(const MultiObjectTrackerInput& input, MultiObjectTrackerOutput* output);
 
   void GetFusionResults(std::vector<FusedObject>* results);
 

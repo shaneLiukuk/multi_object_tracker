@@ -56,23 +56,28 @@ void TrackerProcessor::Process(
     return;
   }
   output->clear();
+
   // std::cout << "beigin AssociateTracks::sensor_type " << static_cast<int>(sensor_type) << std::endl;
+  /* object association */
   Eigen::MatrixXi match_result;
   AssociateTracks(observations, meas_time, sensor_type, &match_result);
-  // std::cout << "beigin UpdateAssignedTracks." << std::endl;
-  // Collect meas_assoc_flag and update assigned tracks
+
+  /* tracker update */
   std::vector<int32_t> meas_assoc_flag(kMaxObsFuse, 0);
-  UpdateAssignedTracks(observations, match_result, sensor_type, meas_time, meas_assoc_flag);
-  // std::cout << "beigin UpdateUnassignedTracks." << std::endl;
-  // Update unassigned tracks (no measurement this frame)
-  UpdateUnassignedTracks(sensor_type, meas_time);
-  // std::cout << "beigin CreateNewTracks." << std::endl;
-  // Create new tracks from unmatched observations (only for SVS)
-  if (sensor_type == SensorType::kSvs) {
-    CreateNewTracks(observations, meas_assoc_flag, glb);
-  }
-  // std::cout << "beigin RemoveLostTrack." << std::endl;
-  RemoveLostTrack();
+  Update(observations, match_result, sensor_type, meas_time, meas_assoc_flag);
+
+  /* tracker pruning */
+  Prune(meas_time);
+
+  /* spawn new tracker */
+  Spawn(observations, meas_assoc_flag, glb, sensor_type);
+
+  /* checkAndPublish */
+  checkAndPublish(meas_time, output);
+
+}
+
+void TrackerProcessor::checkAndPublish(double meas_time, std::vector<FusedObject>* output) {
   // std::cout << "beigin UpdateMotSupplementState." << std::endl;
   std::vector<bool> is_fill;
   UpdateMotSupplementState(meas_time, &is_fill);
@@ -80,6 +85,34 @@ void TrackerProcessor::Process(
   PostProcess(is_fill, output);
 }
 
+void TrackerProcessor::Spawn(const std::vector<FusedObject>& observations,
+                             const std::vector<int>& meas_assoc_flag, const GlobalPose& glb,
+                             SensorType sensor_type) {
+  // std::cout << "beigin CreateNewTracks." << std::endl;                              
+ // Create new tracks from unmatched observations (only for SVS)                              
+  if (sensor_type == SensorType::kSvs) {
+    CreateNewTracks(observations, meas_assoc_flag, glb);
+  }
+}
+
+void TrackerProcessor::Prune(double meas_time) { RemoveLostTrack(); }
+
+void TrackerProcessor::Update(const std::vector<FusedObject>& observations,
+                              const Eigen::MatrixXi& match_result, SensorType sensor_type,
+                              double meas_time, std::vector<int32_t>& meas_assoc_flag) {
+  // 1. 更新有匹配观测的轨迹
+  // Collect meas_assoc_flag and update assigned tracks
+  UpdateAssignedTracks(observations, match_result, sensor_type, meas_time, meas_assoc_flag);
+
+  // 2. 更新无匹配观测的轨迹（仅预测）
+  // Update unassigned tracks (no measurement this frame)
+  UpdateUnassignedTracks(sensor_type, meas_time);
+}
+
+/*
+1.calcScoreMatrix
+2.assign
+*/
 void TrackerProcessor::AssociateTracks(
     const std::vector<FusedObject>& observations,
     double meas_time,
@@ -233,7 +266,7 @@ void TrackerProcessor::UpdateAssignedTracks(
         Track& track = tracks_[j];
         meas_assoc_flag[i] = 1;
 
-        // Update sensor-specific counters and visibility
+        // 1.Update sensor-specific counters and visibility
         if (obs.svs_match_id > 0) {
           track.UpdateSvsCounter(true);
           track.SetInvisibilityPeriod(SensorType::kSvs, 0.0);
@@ -271,6 +304,7 @@ void TrackerProcessor::UpdateAssignedTracks(
         // Check stability for all tracks
         track.CheckStability();
 
+        // motion_update
         // Calculate time difference for Kalman filter
         double last_time = track.GetLastTrackingTime();
         int32_t time_diff = static_cast<int32_t>(obs.object.timestamp - last_time);
@@ -303,7 +337,18 @@ void TrackerProcessor::UpdateAssignedTracks(
         estimated.object.vx = est_vx;
         estimated.object.vy = est_vy;
         estimated.state = track.GetState();
+        
+
+        // Shape + Type Update
+        estimated.object.yaw = obs.object.yaw;
+        estimated.object.length = obs.object.length;
+        estimated.object.height = obs.object.height;
+        estimated.object.width = obs.object.width;
+
+        estimated.object.type = obs.object.type;
+
         track.SetFusedObject(estimated);
+
 
         track.SetLastTrackingTime(obs.object.timestamp);
 
@@ -333,8 +378,9 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double mea
     // Get previous observation from the appropriate sensor history for prediction
     FusedObject prev_obs = track.GetPreviousSensorObject(sensor_type, 1);
 
-    // Calculate time difference
-    double time_diff = static_cast<double>(meas_time - prev_obs.object.timestamp);
+    // Calculate time difference for Kalman filter
+    double last_time = track.GetLastTrackingTime();
+    double time_diff = static_cast<double>(meas_time - last_time);
     float dt = static_cast<float>(time_diff);
     if (dt <= 0.0f) {
       dt = kTimeDiffMin;
@@ -363,7 +409,7 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double mea
 
     track.SetFusedObject(estimated);
 
-    track.SetLastTrackingTime(meas_time);
+    track.SetLastTrackingTime(meas_time); // 主要用于下次有观测对其更新时，每次dt控制
     track.SetMeasFlag(1);
     track.SetFlag(1);
 
@@ -451,6 +497,14 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const Glo
 }
 
 void TrackerProcessor::RemoveLostTrack() {
+  for (int32_t i = 0; i < kTrackWidth; ++i) {
+    Track& track = tracks_[i];
+    if (track.IsUsed()) {
+      std::cout << "RemoveLostTrack:ID:" << std::fixed << static_cast<int>(track.GetId())
+                << " det_id:" << static_cast<int>(track.GetFusedObject().svs_match_id)
+                << " yaw:" << track.GetFusedObject().object.yaw << std::endl;
+    }
+  }
   int del_track_cnt = 0;
   for (int32_t i = 0; i < kTrackWidth; ++i) {
     Track& track = tracks_[i];
@@ -562,6 +616,7 @@ void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
         obj.object.motion_status = out.object.motion_status;
         obj.obj_det_prop = out.obj_det_prop;
         obj.object.flag = 1;
+        std::cout << "PostProcess:ID:" << std::fixed << static_cast<int>(obj.object.id) << " det_id:" << static_cast<int>(obj.svs_match_id)  << " yaw:" << obj.object.yaw  << std::endl;
         output->push_back(obj);
         idx_f++;
       }

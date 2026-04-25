@@ -5,12 +5,12 @@ namespace fusion {
 
 namespace {
 
-constexpr float kProcessNoisePos = 0.001f;
-constexpr float kProcessNoiseVel = 0.02f;
-constexpr float kMeasurementNoiseRx = 0.001f;
-constexpr float kMeasurementNoiseRy = 0.001f;
-constexpr float kMeasurementNoiseRvx = 0.001f;
-constexpr float kMeasurementNoiseRvy = 0.001f;
+constexpr float kProcessNoisePos = 0.000001f;
+constexpr float kProcessNoiseVel = 0.00000f;
+constexpr float kMeasurementNoiseRx = 0.00000f;
+constexpr float kMeasurementNoiseRy = 0.000001f;
+constexpr float kMeasurementNoiseRvx = 0.000001f;
+constexpr float kMeasurementNoiseRvy = 0.000001f;
 
 bool IsValidType(ObjectType type) {
   int type_val = static_cast<int>(type);

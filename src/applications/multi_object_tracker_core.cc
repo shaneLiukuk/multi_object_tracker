@@ -1,4 +1,4 @@
-#include "od_fusion/applications/od_fusion_component.h"
+#include "od_fusion/applications/multi_object_tracker_core.h"
 
 #include <cmath>
 
@@ -9,8 +9,8 @@ namespace {
 
 constexpr float kSensorRangeYMin = -8.0f;
 constexpr float kSensorRangeYMax = 40.0f;
-constexpr float kSensorRangeXMin = -10.0f;
-constexpr float kSensorRangeXMax = 10.0f;
+constexpr float kSensorRangeXMin = -4.0f;
+constexpr float kSensorRangeXMax = 4.0f;
 
 bool IsInValidRange(float x, float y) {
   return (y > kSensorRangeYMin && y < kSensorRangeYMax &&
@@ -19,13 +19,13 @@ bool IsInValidRange(float x, float y) {
 
 }  // namespace
 
-OdFusionComponent::OdFusionComponent(const Config& config)
+MultiObjectTracker::MultiObjectTracker(const Config& config)
     : config_(config),
       fusion_counter_(0) {
   tracker_processor_ = std::make_unique<TrackerProcessor>();
 }
 
-bool OdFusionComponent::Init() {
+bool MultiObjectTracker::Init() {
   if (tracker_processor_) {
     tracker_processor_->Init();
   }
@@ -33,14 +33,14 @@ bool OdFusionComponent::Init() {
   return true;
 }
 
-std::vector<FusedObject> OdFusionComponent::ConvertSvsToObservations(
+std::vector<FusedObject> MultiObjectTracker::ConvertSvsToObservations(
     const SvsFrame& svs_frame) {
   std::vector<FusedObject> observations;
   for (const auto& svs_obj : svs_frame.svs_object_list) {
     if (svs_obj.object.flag == 1) {
       FusedObject fobj;
       fobj.object.timestamp = svs_obj.timestamp_raw;
-      fobj.object.id = svs_obj.object.id + 1;
+      fobj.object.id = svs_obj.object.id;
       fobj.object.x = svs_obj.object.x;
       fobj.object.y = svs_obj.object.y;
       fobj.object.vx = svs_obj.object.vx;
@@ -52,7 +52,7 @@ std::vector<FusedObject> OdFusionComponent::ConvertSvsToObservations(
       fobj.object.type = svs_obj.object.type;
       fobj.object.motion_status = svs_obj.object.motion_status;
       fobj.object.flag = 1;
-      fobj.svs_match_id = svs_obj.object.id + 1;
+      fobj.svs_match_id = svs_obj.object.id;
       fobj.obj_det_prop = ObjDetProp::kSoleSvs;
       observations.push_back(fobj);
     }
@@ -60,14 +60,14 @@ std::vector<FusedObject> OdFusionComponent::ConvertSvsToObservations(
   return observations;
 }
 
-std::vector<FusedObject> OdFusionComponent::ConvertBevToObservations(
+std::vector<FusedObject> MultiObjectTracker::ConvertBevToObservations(
     const BevFrame& bev_frame, float veh_head_rear_wheel) {
   std::vector<FusedObject> observations;
   for (const auto& bev_obj : bev_frame.bev_object_list) {
     if (bev_obj.object.flag == 1) {
       FusedObject fobj;
       fobj.object.timestamp = bev_obj.timestamp_raw;
-      fobj.object.id = bev_obj.object.id + 1;
+      fobj.object.id = bev_obj.object.id;
       fobj.object.x = bev_obj.object.x + veh_head_rear_wheel;
       fobj.object.y = bev_obj.object.y;
       fobj.object.vx = bev_obj.object.vx;
@@ -80,7 +80,7 @@ std::vector<FusedObject> OdFusionComponent::ConvertBevToObservations(
       fobj.object.type = bev_obj.object.type;
       fobj.object.motion_status = bev_obj.object.motion_status;
       fobj.object.flag = 1;
-      fobj.bev_match_id = bev_obj.object.id + 1;
+      fobj.bev_match_id = bev_obj.object.id;
       fobj.obj_det_prop = ObjDetProp::kSoleBev;
       observations.push_back(fobj);
     }
@@ -88,14 +88,14 @@ std::vector<FusedObject> OdFusionComponent::ConvertBevToObservations(
   return observations;
 }
 
-std::vector<FusedObject> OdFusionComponent::ConvertRadarToObservations(
+std::vector<FusedObject> MultiObjectTracker::ConvertRadarToObservations(
     const RadarFrame& radar_frame, float veh_spd) {
   std::vector<FusedObject> observations;
   for (const auto& radar_obj : radar_frame.radar_object_list) {
     if (radar_obj.object.flag == 1) {
       FusedObject fobj;
       fobj.object.timestamp = radar_obj.timestamp_raw;
-      fobj.object.id = radar_obj.object.id + 1;
+      fobj.object.id = radar_obj.object.id;
 
       float iso_x = 0.0f;
       float iso_y = 0.0f;
@@ -111,7 +111,7 @@ std::vector<FusedObject> OdFusionComponent::ConvertRadarToObservations(
       fobj.object.height = 0.2f;
       fobj.object.type = ObjectType::kUnknown;
       fobj.object.flag = 1;
-      fobj.radar_match_id = radar_obj.object.id + 1;
+      fobj.radar_match_id = radar_obj.object.id;
       fobj.obj_det_prop = ObjDetProp::kSoleRadar;
       observations.push_back(fobj);
     }
@@ -119,16 +119,13 @@ std::vector<FusedObject> OdFusionComponent::ConvertRadarToObservations(
   return observations;
 }
 
-void OdFusionComponent::ProcessSvs(const SvsFrame& svs_frame,
+void MultiObjectTracker::ProcessSvs(const SvsFrame& svs_frame,
                                      const GlobalPose& svs_pose) {
   if (!config_.enable_svs) {
     return;
   }
 
   std::vector<FusedObject> observations = ConvertSvsToObservations(svs_frame);
-  // if (observations.empty()) {
-  //   return;
-  // }
 
   double meas_time = svs_pose.time_stamp;
   std::vector<FusedObject> results;
@@ -136,7 +133,7 @@ void OdFusionComponent::ProcessSvs(const SvsFrame& svs_frame,
                                SensorType::kSvs, &results);
 }
 
-void OdFusionComponent::ProcessBev(const BevFrame& bev_frame,
+void MultiObjectTracker::ProcessBev(const BevFrame& bev_frame,
                                     const GlobalPose& bev_pose,
                                     float veh_head_rear_wheel) {
   if (!config_.enable_bev) {
@@ -155,7 +152,7 @@ void OdFusionComponent::ProcessBev(const BevFrame& bev_frame,
                                SensorType::kBev, &results);
 }
 
-void OdFusionComponent::ProcessRadar(const RadarFrame& radar_frame,
+void MultiObjectTracker::ProcessRadar(const RadarFrame& radar_frame,
                                       const GlobalPose& radar_pose,
                                       float veh_spd) {
   if (!config_.enable_radar) {
@@ -174,44 +171,57 @@ void OdFusionComponent::ProcessRadar(const RadarFrame& radar_frame,
                                SensorType::kRadar, &results);
 }
 
-void OdFusionComponent::Process(const MultiObjectTrackerInput& input, MultiObjectTrackerOutput* output) {
+bool MultiObjectTracker::runProcess(const MultiObjectTrackerInput& input,
+                                    MultiObjectTrackerOutput* output) {
   if (!tracker_processor_) {
-    return;
+    return false;
   }
-  // TODO(Shane Liu): Add Judge Input Update??
-  
-  // AddGlobalPoseBufferToCache(input.global_pose_buffer_in);
-  AddGlobalPoseToCache(input.global_pose_in);
-  
-  frame_data_.Reset();
-  if(!msg2InterFrame(input, frame_data_)) {
-    std::cout << "ERROR:Valid frame is empty." << std::endl;
-    return;
+  static double lastest_global_pose_time = 0.0;
+  static double lastest_svs_time = 0.0;
+  // uint64 -> ms
+  const uint64_t min_time_interavl = 10;
+  if (input.global_pose_in.time_stamp_can - lastest_global_pose_time >
+          min_time_interavl &&
+      input.svs_object_in.time_stamp_raw > min_time_interavl) {
+    // AddGlobalPoseBufferToCache(input.global_pose_buffer_in);
+    AddGlobalPoseToCache(input.global_pose_in);
+
+    frame_data_.Reset();
+    if (!msg2InterFrame(input, frame_data_)) {
+      std::cout << "ERROR:Valid frame is empty." << std::endl;
+      return false;
+    }
+
+    // std::cout << "runProcess:svs_frame " << std::fixed << frame_data_.svs_frame.time_ns <<
+    // std::endl; std::cout << "runProcess:svs_pose " << std::fixed <<
+    // frame_data_.svs_pose.time_stamp << std::endl;
+    /*
+    不进行航迹处理的约束：
+    1.未找到合适的global pose
+    2.enable_未开
+    3.主传感器一直未收到测量更新
+    */
+
+    ProcessSvs(frame_data_.svs_frame, frame_data_.svs_pose);
+
+    // ProcessBev(frame_data_.bev_frame, frame_data_.bev_pose, 0.0f);
+
+    // ProcessRadar(frame_data_.radar_frame, frame_data_.radar_pose, 0.0f);
+    // update lastest timestamp
+    lastest_global_pose_time = input.global_pose_in.time_stamp_can;
+    lastest_svs_time = input.svs_object_in.time_stamp_raw;
+    return true;
   }
-
-  // std::cout << "Process:svs_frame " << std::fixed << frame_data_.svs_frame.time_ns << std::endl;
-  // std::cout << "Process:svs_pose " << std::fixed << frame_data_.svs_pose.time_stamp << std::endl;
-  /*
-  不进行航迹处理的约束：
-  1.未找到合适的global pose
-  2.enable_未开
-  3.主传感器一直未收到测量更新
-  */
-  
-  ProcessSvs(frame_data_.svs_frame, frame_data_.svs_pose);
-
-  // ProcessBev(frame_data_.bev_frame, frame_data_.bev_pose, 0.0f);
-
-  // ProcessRadar(frame_data_.radar_frame, frame_data_.radar_pose, 0.0f);
+  return false;
 }
 
-void OdFusionComponent::GetFusionResults(std::vector<FusedObject>* results) {
+void MultiObjectTracker::GetFusionResults(std::vector<FusedObject>* results) {
   if (tracker_processor_) {
     tracker_processor_->GetResults(results);
   }
 }
 
-void OdFusionComponent::GetFrameData(FrameData* frame_data) {
+void MultiObjectTracker::GetFrameData(FrameData* frame_data) {
   if (frame_data == nullptr) {
     return;
   }
@@ -220,7 +230,7 @@ void OdFusionComponent::GetFrameData(FrameData* frame_data) {
   frame_data->svs_pose = frame_data_.svs_pose;
 }
 
-bool OdFusionComponent::msg2InterFrame(const MultiObjectTrackerInput& input, FrameData& frame) {
+bool MultiObjectTracker::msg2InterFrame(const MultiObjectTrackerInput& input, FrameData& frame) {
 
   // TODO(Shane Liu): object num is 0 ? timestamo is not update?
   SvsFrame svs_f;
@@ -238,7 +248,7 @@ bool OdFusionComponent::msg2InterFrame(const MultiObjectTrackerInput& input, Fra
 
 }
 
-void OdFusionComponent::AddGlobalPoseToCache(const GlobalPoseEstimation& input) {
+void MultiObjectTracker::AddGlobalPoseToCache(const GlobalPoseEstimation& input) {
   // 1. 构造要缓存的 pose
   if (input.time_stamp_can - 0 < kEpsilon) {
     std::cout << "AddGlobalPoseToCache:time " << std::fixed << input.time_stamp_can * 1e-3 << std::endl;
@@ -275,7 +285,7 @@ void OdFusionComponent::AddGlobalPoseToCache(const GlobalPoseEstimation& input) 
   lastest_global_pose_ = pose;
 }
 
-void OdFusionComponent::AddGlobalPoseBufferToCache(const GlobalPoseBuffer& pose_buffer) {
+void MultiObjectTracker::AddGlobalPoseBufferToCache(const GlobalPoseBuffer& pose_buffer) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   // 遍历数组里的 10 个 pose
@@ -307,7 +317,7 @@ void OdFusionComponent::AddGlobalPoseBufferToCache(const GlobalPoseBuffer& pose_
   }
 }
 
-bool OdFusionComponent::QueryNearestLocalization(const double& timestamp, GlobalPose& localization) {
+bool MultiObjectTracker::QueryNearestLocalization(const double& timestamp, GlobalPose& localization) {
   if (global_pose_cache_.empty()) {
     // std::cout << "QueryNearestLocalization: Localization message NOT received." << std::endl;
     return false;
@@ -334,7 +344,7 @@ bool OdFusionComponent::QueryNearestLocalization(const double& timestamp, Global
   return true;
 }
 
-SvsFrame OdFusionComponent::ConvertObjectSetToSvsFrame(const ObjectSet& msg, const GlobalPose& pose) {
+SvsFrame MultiObjectTracker::ConvertObjectSetToSvsFrame(const ObjectSet& msg, const GlobalPose& pose) {
   SvsFrame svs_frame;
   svs_frame.time_ns = msg.time_stamp * 1e-3;
 
@@ -344,14 +354,19 @@ SvsFrame OdFusionComponent::ConvertObjectSetToSvsFrame(const ObjectSet& msg, con
     svs_obj.timestamp_raw = msg.time_stamp_raw * 1e-3;
     svs_obj.object.timestamp = msg.time_stamp * 1e-3;
     svs_obj.object.id = static_cast<uint8_t>(obj_info.tracking_id);
-    // if (IsInValidRange(obj_info.distance_x, obj_info.distance_y)) {
-    //   // std::cout << "X Range: [ " << kSensorRangeXMin << ", " << kSensorRangeXMax << " ]\n";
-    //   // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
-    //   continue;
-    // }
+    if (!(IsInValidRange(obj_info.distance_x, obj_info.distance_y))) {
+      // std::cout << "X Range: [ " << kSensorRangeXMin << ", " << kSensorRangeXMax << " ]\n";
+      // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
+      continue;
+    }
+    if (obj_info.class_id != 1) {
+      continue;
+    }
     LocalToGlobal(pose, obj_info.distance_x, obj_info.distance_y, &svs_obj.object.x, &svs_obj.object.y);
     // svs_obj.object.x = obj_info.distance_x;
     // svs_obj.object.y = obj_info.distance_y;
+    std::cout << "ConvertObjectSetToSvsFrame:" << std::fixed << " abs_vx:" << obj_info.relative_velocity_x << " abs_vy:" << obj_info.relative_velocity_y << std::endl;
+    svs_frame.svs_object_list.push_back(svs_obj);
     LocalToGlobalVel(pose, obj_info.relative_velocity_x, obj_info.relative_velocity_y, &svs_obj.object.vx, &svs_obj.object.vy);
     // svs_obj.object.vx = obj_info.relative_velocity_x;
     // svs_obj.object.vy = obj_info.relative_velocity_y;
@@ -382,46 +397,14 @@ SvsFrame OdFusionComponent::ConvertObjectSetToSvsFrame(const ObjectSet& msg, con
       case 4: svs_obj.object.motion_status = MotionStatus::kStopped; break;
       default: svs_obj.object.motion_status = MotionStatus::kUnknown; break;
     }
-    // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
-    // RCLCPP_INFO_STREAM(this->get_logger(), "[SVS Object Assign Info]");
-    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp_raw: " << svs_obj.timestamp_raw);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "timestamp    : " << svs_obj.object.timestamp);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "id           : " << static_cast<int>(svs_obj.object.id));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "x            : " << svs_obj.object.x);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "y            : " << svs_obj.object.y);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "vx           : " << svs_obj.object.vx);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "vy           : " << svs_obj.object.vy);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "ax           : " << svs_obj.object.ax);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "ay           : " << svs_obj.object.ay);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "yaw          : " << svs_obj.object.yaw);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "length       : " << svs_obj.object.length);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "width        : " << svs_obj.object.width);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "height       : " << svs_obj.object.height);
-    // RCLCPP_INFO_STREAM(this->get_logger(), "flag         : " << static_cast<int>(svs_obj.object.flag));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "valid_status : " << static_cast<int>(obj_info.valid_status));
-    // RCLCPP_INFO_STREAM(this->get_logger(), "=====================================");
-    // RCLCPP_INFO_STREAM_THROTTLE(
-    //     this->get_logger(), *this->get_clock(),
-    //     1000,  // 👈 改这里：间隔毫秒数
-    //     "====================================="
-    //         << "\n"
-    //         << "[SVS Object Throttled (10Hz)]" << "\n"
-    //         << "timestamp_raw: " << svs_obj.timestamp_raw << "\n"
-    //         << "timestamp    : " << svs_obj.object.timestamp << "\n"
-    //         << "id           : " << static_cast<int>(svs_obj.object.id) << "\n"
-    //         << "x            : " << svs_obj.object.x << "\n"
-    //         << "y            : " << svs_obj.object.y << "\n"
-    //         << "vx           : " << svs_obj.object.vx << "\n"
-    //         << "vy           : " << svs_obj.object.vy << "\n"
-    //         << "flag         : " << static_cast<int>(svs_obj.object.flag) << "\n"
-    //         << "=====================================");
+    std::cout << "ConvertObjectSetToSvsFrame:" << std::fixed << i << " ID:" << static_cast<int>(svs_obj.object.id) << " YAW:" <<  svs_obj.object.yaw << " abs_vx:" << svs_obj.object.vx << " abs_vy:" << svs_obj.object.vy << std::endl;
     svs_frame.svs_object_list.push_back(svs_obj);
   }
 
   return svs_frame;
 }
 
-BevFrame OdFusionComponent::ConvertPerceptionBEVToBevFrame(
+BevFrame MultiObjectTracker::ConvertPerceptionBEVToBevFrame(
     const PerceptionBEVObject& msg) {
   BevFrame bev_frame;
   bev_frame.time_ns = msg.timestamp * 1e-3;

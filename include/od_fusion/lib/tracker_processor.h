@@ -64,6 +64,7 @@ class TrackerProcessor {
   int32_t FindReplaceableTrack(const FusedObject& obs, const GlobalPose& pose) const;
 
   void RemoveLostTrack();
+  void RemoveOverlappedTracker();
 
   int32_t track_cnt_;
   std::vector<Track> tracks_;

@@ -84,7 +84,7 @@ FusionNode::FusionNode(const MultiObjectTracker::Config& config)
         this->GlobalPoseCallback(msg);
       });
 
-  constexpr int32_t kTimerPeriodMs = 50;
+  constexpr int32_t kTimerPeriodMs = 100;
   auto timer_period = std::chrono::milliseconds(kTimerPeriodMs);
   timer_ = this->create_wall_timer(
       timer_period,

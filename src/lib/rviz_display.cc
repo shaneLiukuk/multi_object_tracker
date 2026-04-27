@@ -235,14 +235,16 @@ void RvizDisplay::PublishObjectsToRviz(
     text_marker.pose.position.y = dis_y;
     text_marker.pose.position.z = 0.5;
     text_marker.scale.z = 1.0;
-    text_marker.color.r = 1.0;
-    text_marker.color.g = 1.0;
-    text_marker.color.b = 1.0;
-    text_marker.color.a = 1.0;
-    text_marker.text = "ID: " + std::to_string(obj.id) +
-                       "\nx: " + NumToStr(dis_x, 2) +
-                       "\ny: " + NumToStr(dis_y, 2) +
-                       "\nv: " + NumToStr(abs_velocity, 2) + " km/h";
+    // text_marker.color.r = 1.0;
+    // text_marker.color.g = 1.0;
+    // text_marker.color.b = 1.0;
+    // text_marker.color.a = 1.0;
+    text_marker.color = box_color;
+    // text_marker.text = "ID: " + std::to_string(obj.id) +
+    //                    "\nx: " + NumToStr(dis_x, 2) +
+    //                    "\ny: " + NumToStr(dis_y, 2) +
+    //                    "\nv: " + NumToStr(abs_velocity, 2) + " km/h";
+    text_marker.text = "MATCH_ID: " + std::to_string(fobj.svs_match_id);    
     marker_array.markers.push_back(text_marker);
 
     // -------------------- 圆柱点 --------------------
@@ -276,7 +278,7 @@ void RvizDisplay::PublishObjectsToRviz(
   for (int del_id = id; del_id < last_id; ++del_id) {
     visualization_msgs::msg::Marker m;
     m.header.frame_id = frame_id;
-    m.header.stamp = now;
+    // m.header.stamp = now;
     m.action = visualization_msgs::msg::Marker::DELETE;
     m.id = del_id;
 

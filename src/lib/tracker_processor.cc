@@ -19,7 +19,7 @@ constexpr float kTimeDiffMax = 0.5f;
 constexpr float kDistGate = 20.0f;
 constexpr float kPosWeight = 1.0f;
 constexpr float kVelWeight = 0.1f;
-constexpr float kCostThreshold = 10.0f;
+constexpr float kCostThreshold = 4.0f;
 constexpr float kIdMatchCost = 0.01f;
 
 }  // namespace
@@ -95,7 +95,12 @@ void TrackerProcessor::Spawn(const std::vector<FusedObject>& observations,
   }
 }
 
-void TrackerProcessor::Prune(double meas_time) { RemoveLostTrack(); }
+void TrackerProcessor::Prune(double meas_time) {
+  // Check tracker lifetime: if the tracker is old, delete it
+  RemoveLostTrack();
+  // Check tracker overlap: if the tracker is overlapped, delete the one with lower IOU
+  // TODO(Shane Liu): Add RemoveOverlappedTracker
+}
 
 void TrackerProcessor::Update(const std::vector<FusedObject>& observations,
                               const Eigen::MatrixXi& match_result, SensorType sensor_type,
@@ -426,6 +431,7 @@ void TrackerProcessor::CreateNewTracks(
     const std::vector<FusedObject>& observations,
     const std::vector<int>& meas_valid_flag,
     const GlobalPose& glb) {
+  // Limited to kMaxObsFuse Trackers 
   for (size_t obs_idx = 0; obs_idx < kMaxObsFuse && obs_idx < observations.size(); ++obs_idx) {
     if (obs_idx < meas_valid_flag.size() && meas_valid_flag[obs_idx] == 0 &&
         observations[obs_idx].object.flag) {
@@ -469,6 +475,7 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const Glo
     ObjDetProp det_prop = track.GetFusedObject().obj_det_prop;
     bool is_replaceable = !(det_prop == ObjDetProp::kSoleRadar ||
                             det_prop == ObjDetProp::kFused);
+    // 计算轨迹位置与观测位置的局部坐标差异[Cartesian],delete Y差异过大的轨迹，保留更接近观测的轨迹                    
     float x_t = 0.0;
     float y_t = 0.0;
     GlobalToLocal(pose, track_pos.object.x, track_pos.object.y, &x_t, &y_t);
@@ -494,6 +501,11 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const Glo
     return -1;
   }
   return replace_idx;
+}
+
+void TrackerProcessor::RemoveOverlappedTracker() {
+  
+
 }
 
 void TrackerProcessor::RemoveLostTrack() {
@@ -523,10 +535,10 @@ void TrackerProcessor::RemoveLostTrack() {
     if (track.IsUsed()) {
       std::cout << "RemoveLostTrack::Track ID: " << track.GetId() << ", Used: " << track.IsUsed()
                 << ", DynamicFlag: " << dynamic_flag << ", LostCntFlag: " << lost_cnt_flag
-                << ", AnyVisible: " << any_visible << std::endl;
+                << ", AnyVisible: " << any_visible << ",IsAlive: " << track.IsAlive() << std::endl;
     }
-
-    if (track.IsUsed() && (dynamic_flag || lost_cnt_flag || !any_visible)) {
+     if (track.IsUsed() && !track.IsAlive()) {
+    // if (track.IsUsed() && (dynamic_flag || lost_cnt_flag || !any_visible)) {
       track.Reset();
       del_track_cnt++;
     }

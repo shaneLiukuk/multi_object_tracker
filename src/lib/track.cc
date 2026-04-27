@@ -131,7 +131,8 @@ void Track::Initialize(const FusedObject& obs) {
 
   // Generate new track ID
   track_id_ = GenerateNewTrackId();
-
+  fused_object_.object.id = track_id_;
+  
   // Initialize Kalman filter
   kalman_filter_.Init(
       obs.object.x, obs.object.y, obs.object.vx, obs.object.vy,

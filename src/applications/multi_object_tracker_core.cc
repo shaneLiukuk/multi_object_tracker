@@ -9,8 +9,8 @@ namespace {
 
 constexpr float kSensorRangeYMin = -8.0f;
 constexpr float kSensorRangeYMax = 40.0f;
-constexpr float kSensorRangeXMin = -4.0f;
-constexpr float kSensorRangeXMax = 4.0f;
+constexpr float kSensorRangeXMin = -10.0f;
+constexpr float kSensorRangeXMax = 10.0f;
 
 bool IsInValidRange(float x, float y) {
   return (y > kSensorRangeYMin && y < kSensorRangeYMax &&
@@ -191,22 +191,21 @@ bool MultiObjectTracker::runProcess(const MultiObjectTrackerInput& input,
       std::cout << "ERROR:Valid frame is empty." << std::endl;
       return false;
     }
-
-    // std::cout << "runProcess:svs_frame " << std::fixed << frame_data_.svs_frame.time_ns <<
-    // std::endl; std::cout << "runProcess:svs_pose " << std::fixed <<
-    // frame_data_.svs_pose.time_stamp << std::endl;
     /*
     不进行航迹处理的约束：
     1.未找到合适的global pose
     2.enable_未开
     3.主传感器一直未收到测量更新
     */
-
+    /* Process Svs Vision */
     ProcessSvs(frame_data_.svs_frame, frame_data_.svs_pose);
 
+    /* Process Front Bev Vision */
     // ProcessBev(frame_data_.bev_frame, frame_data_.bev_pose, 0.0f);
 
+    /* Process Radar */
     // ProcessRadar(frame_data_.radar_frame, frame_data_.radar_pose, 0.0f);
+    
     // update lastest timestamp
     lastest_global_pose_time = input.global_pose_in.time_stamp_can;
     lastest_svs_time = input.svs_object_in.time_stamp_raw;
@@ -359,9 +358,9 @@ SvsFrame MultiObjectTracker::ConvertObjectSetToSvsFrame(const ObjectSet& msg, co
       // std::cout << "Y Range: [ " << kSensorRangeYMin << ", " << kSensorRangeYMax << " ]\n";
       continue;
     }
-    if (obj_info.class_id != 1) {
-      continue;
-    }
+    // if (obj_info.class_id != 1) {
+    //   continue;
+    // }
     LocalToGlobal(pose, obj_info.distance_x, obj_info.distance_y, &svs_obj.object.x, &svs_obj.object.y);
     // svs_obj.object.x = obj_info.distance_x;
     // svs_obj.object.y = obj_info.distance_y;

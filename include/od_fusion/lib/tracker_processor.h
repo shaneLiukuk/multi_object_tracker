@@ -64,7 +64,12 @@ class TrackerProcessor {
   int32_t FindReplaceableTrack(const FusedObject& obs, const GlobalPose& pose) const;
 
   void RemoveLostTrack();
+
+  // Remove overlapping trackers based on distance + IoU
   void RemoveOverlappedTracker();
+
+  // IoU calculation for 2D bounding boxes
+  static float CalculateIoU(const FusedObject& a, const FusedObject& b);
 
   int32_t track_cnt_;
   std::vector<Track> tracks_;

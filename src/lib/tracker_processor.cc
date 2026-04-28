@@ -22,6 +22,10 @@ constexpr float kVelWeight = 0.1f;
 constexpr float kCostThreshold = 4.0f;
 constexpr float kIdMatchCost = 0.01f;
 
+// RemoveOverlappedTracker parameters
+constexpr float kOverlapDistThreshold = 5.0f;      // Distance (m) to consider overlap
+constexpr float kOverlapIoUThreshold = 0.3f;       // IoU threshold for overlap
+
 }  // namespace
 
 TrackerProcessor::TrackerProcessor()
@@ -362,6 +366,7 @@ void TrackerProcessor::UpdateAssignedTracks(
       }
     }
   }
+
 }
 
 void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double meas_time) {
@@ -479,7 +484,7 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const Glo
     float x_t = 0.0;
     float y_t = 0.0;
     GlobalToLocal(pose, track_pos.object.x, track_pos.object.y, &x_t, &y_t);
-  
+
     if (is_replaceable &&
         (std::abs(x_t) > max_dist_x ||
          std::abs(y_t) > max_dist_y)) {
@@ -644,6 +649,135 @@ void TrackerProcessor::GetResults(std::vector<FusedObject>* results) const {
   for (int32_t i = 0; i < kTrackWidth; ++i) {
     if (tracks_[i].IsUsed()) {
       results->push_back(tracks_[i].GetOutput());
+    }
+  }
+}
+
+float TrackerProcessor::CalculateIoU(const FusedObject& a, const FusedObject& b) {
+  // 2D bounding box: center (x, y) with length/width
+  // Convert to corner coordinates: left, right, top, bottom
+  float a_left = a.object.x - a.object.length / 2.0f;
+  float a_right = a.object.x + a.object.length / 2.0f;
+  float a_top = a.object.y - a.object.width / 2.0f;
+  float a_bottom = a.object.y + a.object.width / 2.0f;
+
+  float b_left = b.object.x - b.object.length / 2.0f;
+  float b_right = b.object.x + b.object.length / 2.0f;
+  float b_top = b.object.y - b.object.width / 2.0f;
+  float b_bottom = b.object.y + b.object.width / 2.0f;
+
+  // Calculate intersection
+  float inter_left = std::max(a_left, b_left);
+  float inter_right = std::min(a_right, b_right);
+  float inter_top = std::max(a_top, b_top);
+  float inter_bottom = std::min(a_bottom, b_bottom);
+
+  // No intersection
+  if (inter_right <= inter_left || inter_bottom <= inter_top) {
+    return 0.0f;
+  }
+
+  float inter_area = (inter_right - inter_left) * (inter_bottom - inter_top);
+
+  // Union area
+  float a_area = (a_right - a_left) * (a_bottom - a_top);
+  float b_area = (b_right - b_left) * (b_bottom - b_top);
+  float union_area = a_area + b_area - inter_area;
+
+  if (union_area <= 0.0f) {
+    return 0.0f;
+  }
+
+  return inter_area / union_area;
+}
+
+void TrackerProcessor::RemoveOverlappedTracker() {
+  // Collect indices of all used tracks
+  std::vector<int32_t> active_indices;
+  for (int32_t i = 0; i < kTrackWidth; ++i) {
+    if (tracks_[i].IsUsed()) {
+      active_indices.push_back(i);
+    }
+  }
+
+  // Track which tracks to delete
+  std::vector<bool> to_delete(active_indices.size(), false);
+
+  // Double loop through all pairs (only check each pair once)
+  for (size_t i = 0; i < active_indices.size(); ++i) {
+    int32_t idx_i = active_indices[i];
+    if (to_delete[i]) {
+      continue;  // Already marked for deletion
+    }
+
+    Track& track_i = tracks_[idx_i];
+    const FusedObject& obj_i = track_i.GetFusedObject();
+
+    for (size_t j = i + 1; j < active_indices.size(); ++j) {
+      int32_t idx_j = active_indices[j];
+      if (to_delete[j]) {
+        continue;  // Already marked for deletion
+      }
+
+      Track& track_j = tracks_[idx_j];
+      const FusedObject& obj_j = track_j.GetFusedObject();
+
+      // Distance check
+      float dx = obj_i.object.x - obj_j.object.x;
+      float dy = obj_i.object.y - obj_j.object.y;
+      float dist = std::sqrt(dx * dx + dy * dy);
+
+      if (dist > kOverlapDistThreshold) {
+        continue;  // Too far apart
+      }
+
+      // IoU check
+      float iou = CalculateIoU(obj_i, obj_j);
+      if (iou < kOverlapIoUThreshold) {
+        continue;  // Not overlapping enough
+      }
+
+      // ========== Overlap detected, decide which to delete ==========
+      bool i_is_unknown = (obj_i.object.type == ObjectType::kUnknown);
+      bool j_is_unknown = (obj_j.object.type == ObjectType::kUnknown);
+
+      int32_t to_delete_idx = -1;
+
+      if (i_is_unknown && !j_is_unknown) {
+        // i is unknown, j is known -> delete i
+        to_delete_idx = i;
+      } else if (!i_is_unknown && j_is_unknown) {
+        // i is known, j is unknown -> delete j
+        to_delete_idx = j;
+      } else if (i_is_unknown && j_is_unknown) {
+        // Both unknown -> delete younger (less tracking count)
+        if (track_i.GetStatus().cnt < track_j.GetStatus().cnt) {
+          to_delete_idx = i;
+        } else {
+          to_delete_idx = j;
+        }
+      } else {
+        // Both known -> delete younger
+        if (track_i.GetStatus().cnt < track_j.GetStatus().cnt) {
+          to_delete_idx = i;
+        } else {
+          to_delete_idx = j;
+        }
+      }
+
+      if (to_delete_idx == static_cast<int32_t>(i)) {
+        to_delete[i] = true;
+      } else if (to_delete_idx == static_cast<int32_t>(j)) {
+        to_delete[j] = true;
+      }
+    }
+  }
+
+  // Delete marked tracks (iterate backwards to handle iterator invalidation safely)
+  for (int32_t i = static_cast<int32_t>(active_indices.size()) - 1; i >= 0; --i) {
+    if (to_delete[i]) {
+      int32_t idx = active_indices[i];
+      tracks_[idx].Reset();
     }
   }
 }

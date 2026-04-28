@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 #include <vector>
 #include <cmath>
+#include <limits>
 #include "od_fusion/lib/track.h"
 #include "od_fusion/lib/tracker_processor.h"
+#include "od_fusion/lib/hungarian.h"
 
 namespace perception {
 namespace fusion {
@@ -373,6 +375,196 @@ TEST_F(TrackerProcessorTest, AliveStateManagement) {
   std::vector<FusedObject> results;
   tracker_processor_->GetResults(&results);
   EXPECT_GE(results.size(), 0U);
+}
+
+// ========== Hungarian Tests ==========
+
+TEST(HungarianTest, SimpleAssignment) {
+  Eigen::MatrixXf cost(3, 3);
+  cost << 1, 2, 3,
+          2, 4, 0,
+          3, 0, 2;
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  // Each row and column should have at most one assignment
+  int count = 0;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+        EXPECT_EQ(assignment(i, j), 1);
+      }
+    }
+  }
+  EXPECT_EQ(count, 3);  // Should assign all 3 rows
+}
+
+TEST(HungarianTest, SquareMatrix5x5) {
+  Eigen::MatrixXf cost = Eigen::MatrixXf::Ones(5, 5) * 100.0f;
+
+  // Set some lower costs
+  cost(0, 1) = 1.0f;
+  cost(1, 2) = 2.0f;
+  cost(2, 0) = 3.0f;
+  cost(3, 4) = 1.5f;
+  cost(4, 3) = 2.5f;
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  int count = 0;
+  for (int i = 0; i < 5; ++i) {
+    for (int j = 0; j < 5; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 5);  // Should assign all 5 rows
+}
+
+TEST(HungarianTest, AllEqualCost) {
+  Eigen::MatrixXf cost = Eigen::MatrixXf::Ones(4, 4);
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  int count = 0;
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 4);
+}
+
+TEST(HungarianTest, DiagonalMatrix) {
+  Eigen::MatrixXf cost = Eigen::MatrixXf::Zero(4, 4);
+  for (int i = 0; i < 4; ++i) {
+    cost(i, i) = i + 1;  // Diagonal has increasing costs
+  }
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  // Should still produce a valid assignment (not necessarily diagonal)
+  int count = 0;
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+        EXPECT_EQ(assignment(i, j), 1);
+      }
+    }
+  }
+  EXPECT_EQ(count, 4);
+}
+
+TEST(HungarianTest, LargeMatrix8x8) {
+  Eigen::MatrixXf cost(8, 8);
+  for (int i = 0; i < 8; ++i) {
+    for (int j = 0; j < 8; ++j) {
+      cost(i, j) = static_cast<float>(i + j + 1);
+    }
+  }
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  int count = 0;
+  for (int i = 0; i < 8; ++i) {
+    for (int j = 0; j < 8; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 8);
+}
+
+TEST(HungarianTest, EmptyMatrix) {
+  Eigen::MatrixXf cost(0, 0);
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+  EXPECT_EQ(assignment.rows(), 0);
+  EXPECT_EQ(assignment.cols(), 0);
+}
+
+TEST(HungarianTest, NullAssignment) {
+  Eigen::MatrixXf cost(3, 3);
+  cost << 1, 2, 3,
+          2, 4, 0,
+          3, 0, 2;
+
+  // Should not crash with null
+  Hungarian::Solve(cost, nullptr);
+}
+
+TEST(HungarianTest, MatrixWithInf) {
+  Eigen::MatrixXf cost(3, 3);
+  cost << 1, 2, 3,
+          2, 4, std::numeric_limits<float>::infinity(),
+          3, 0, 2;
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  // Should handle inf gracefully (no assignment)
+  int count = 0;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 0);
+}
+
+TEST(HungarianTest, MatrixWithNaN) {
+  Eigen::MatrixXf cost(3, 3);
+  cost << 1, 2, 3,
+          2, std::nan(""), 0,
+          3, 0, 2;
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  int count = 0;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 0);
+}
+
+TEST(HungarianTest, 64x64Matrix) {
+  Eigen::MatrixXf cost = Eigen::MatrixXf::Ones(64, 64) * 100.0f;
+
+  // Set some random lower costs along diagonal blocks
+  for (int i = 0; i < 64; ++i) {
+    cost(i, i) = static_cast<float>(i + 1) * 0.1f;
+  }
+
+  Eigen::MatrixXi assignment;
+  Hungarian::Solve(cost, &assignment);
+
+  int count = 0;
+  for (int i = 0; i < 64; ++i) {
+    for (int j = 0; j < 64; ++j) {
+      if (assignment(i, j) > 0) {
+        count++;
+      }
+    }
+  }
+  EXPECT_EQ(count, 64);
 }
 
 }  // namespace fusion

@@ -12,12 +12,6 @@ float Track::s_max_invisible_period_svs_ = 0.5f;   // 500ms
 float Track::s_max_invisible_period_bev_ = 0.5f;   // 500ms
 float Track::s_max_invisible_period_radar_ = 0.75f; // 750ms
 
-namespace {
-constexpr int32_t kThresStable = 3;
-constexpr int32_t kThresUnstable = 2;
-constexpr int32_t kThresIdAssign = 20;
-constexpr float kVelocityThreshold = 1e-4f;
-}  // namespace
 
 Track::Track()
     : track_id_(0),

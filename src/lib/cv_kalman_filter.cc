@@ -3,14 +3,6 @@
 namespace perception {
 namespace fusion {
 
-namespace {
-
-constexpr float kProcessNoisePos = 0.000001f;
-constexpr float kProcessNoiseVel = 0.00000f;
-constexpr float kMeasurementNoiseRx = 0.00000f;
-constexpr float kMeasurementNoiseRy = 0.000001f;
-constexpr float kMeasurementNoiseRvx = 0.000001f;
-constexpr float kMeasurementNoiseRvy = 0.000001f;
 
 bool IsValidType(ObjectType type) {
   int type_val = static_cast<int>(type);
@@ -20,7 +12,6 @@ bool IsValidType(ObjectType type) {
   return valid;
 }
 
-}  // namespace
 
 CvKalmanFilter::CvKalmanFilter() : x_est_(4, 1), p_est_(4, 4) {
   x_est_.setZero();

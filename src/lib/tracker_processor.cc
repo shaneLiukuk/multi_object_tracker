@@ -7,27 +7,6 @@
 namespace perception {
 namespace fusion {
 
-namespace {
-
-constexpr int32_t kThresLost = 10;
-constexpr int32_t kThresOutput = 7;
-constexpr float kStaticCntLow = 20.0f;
-constexpr float kStaticDisThres = 15.0f;
-constexpr float kVelocityThreshold = 1e-4f;
-constexpr float kTimeDiffMin = 0.05f;
-constexpr float kTimeDiffMax = 0.5f;
-constexpr float kDistGate = 20.0f;
-constexpr float kPosWeight = 1.0f;
-constexpr float kVelWeight = 0.1f;
-constexpr float kCostThreshold = 4.0f;
-constexpr float kIdMatchCost = 0.01f;
-
-// RemoveOverlappedTracker parameters
-constexpr float kOverlapDistThreshold = 5.0f;      // Distance (m) to consider overlap
-constexpr float kOverlapIoUThreshold = 0.3f;       // IoU threshold for overlap
-
-}  // namespace
-
 TrackerProcessor::TrackerProcessor()
     : track_cnt_(0) {
   tracks_.resize(kTrackWidth);
@@ -103,7 +82,7 @@ void TrackerProcessor::Prune(double meas_time) {
   // Check tracker lifetime: if the tracker is old, delete it
   RemoveLostTrack();
   // Check tracker overlap: if the tracker is overlapped, delete the one with lower IOU
-  // TODO(Shane Liu): Add RemoveOverlappedTracker
+  RemoveOverlappedTracker();
 }
 
 void TrackerProcessor::Update(const std::vector<FusedObject>& observations,
@@ -506,11 +485,6 @@ int32_t TrackerProcessor::FindReplaceableTrack(const FusedObject& obs, const Glo
     return -1;
   }
   return replace_idx;
-}
-
-void TrackerProcessor::RemoveOverlappedTracker() {
-  
-
 }
 
 void TrackerProcessor::RemoveLostTrack() {

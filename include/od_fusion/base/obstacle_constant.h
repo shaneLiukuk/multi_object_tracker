@@ -6,40 +6,6 @@
 
 namespace perception {
 
-constexpr uint8_t kMaxObsSvs = 64;
-constexpr uint8_t kMaxObsBev = 20;
-constexpr uint8_t kMaxObsRadar = 64;
-constexpr uint8_t kMaxObsFuse = 64;
-constexpr uint8_t kTrackDepth = 30;
-constexpr uint8_t kTrackWidth = 64;
-constexpr uint8_t kMaxOutputTracks = 64;
-constexpr uint8_t kLen1st = 3;
-constexpr int32_t kThresStable = 3;
-constexpr int32_t kThresUnstable = 2;
-constexpr int32_t kThresLost = 10;
-constexpr int32_t kThresOutput = 7;
-
-constexpr float kProcessNoisePos = 0.001f;
-constexpr float kProcessNoiseVel = 0.02f;
-constexpr float kDistGate = 20.0f;
-constexpr float kVelWeight = 0.1f;
-constexpr float kPosWeight = 1.0f;
-
-constexpr float kSensorRangeYMin = -8.0f;
-constexpr float kSensorRangeYMax = 20.0f;
-constexpr float kSensorRangeXMin = -10.0f;
-constexpr float kSensorRangeXMax = 10.0f;
-
-constexpr float kStaticCntLow = 20.0f;
-constexpr float kStaticDisThres = 15.0f;
-constexpr float kVelocityThreshold = 1e-4f;
-constexpr float kPi = 3.14159265358979f;
-
-constexpr float kTimeDiffMin = 0.05f;
-constexpr float kTimeDiffMax = 0.5f;
-
-constexpr float kEpsilon = 0.000000001;
-
 enum class ObjectType : uint8_t {
   kUnknown = 0,
   kCar = 1,

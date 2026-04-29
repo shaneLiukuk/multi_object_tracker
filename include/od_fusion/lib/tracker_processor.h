@@ -7,6 +7,7 @@
 #include "od_fusion/base/obstacle_constant.h"
 #include "od_fusion/lib/track.h"
 #include "od_fusion/lib/coordinate_transform.h"
+#include "od_fusion/utils/f_define.h"
 
 namespace perception {
 namespace fusion {

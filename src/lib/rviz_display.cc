@@ -244,7 +244,10 @@ void RvizDisplay::PublishObjectsToRviz(
     //                    "\nx: " + NumToStr(dis_x, 2) +
     //                    "\ny: " + NumToStr(dis_y, 2) +
     //                    "\nv: " + NumToStr(abs_velocity, 2) + " km/h";
-    text_marker.text = "MATCH_ID: " + std::to_string(fobj.svs_match_id);    
+
+    text_marker.text = "MATCH_ID: " + std::to_string(static_cast<int>(fobj.svs_match_id));    
+
+    std::cout << ns << "-PublishObjectsToRviz: ID:" << std::fixed << static_cast<int>(obj.id) << " x:" << dis_x << " y:" << dis_y << " v:" << abs_velocity << " yaw:" << yawIso8855 << " det_id:" << static_cast<int>(fobj.svs_match_id) << std::endl;
     marker_array.markers.push_back(text_marker);
 
     // -------------------- 圆柱点 --------------------
@@ -309,7 +312,7 @@ void RvizDisplay::PublishAll(const FrameData& frame_data,
     float dis_x = fobj.object.x;
     float dis_y = fobj.object.y;
     CartesianToIso8855(dis_x, dis_y, &fobj.object.x, &fobj.object.y);
-    fobj.svs_match_id = obj.object.id + 1;
+    fobj.svs_match_id = obj.object.id;
     fobj.obj_det_prop = ObjDetProp::kSoleSvs;
     svs_fobjects.push_back(fobj);
   }
@@ -322,6 +325,11 @@ void RvizDisplay::PublishAll(const FrameData& frame_data,
   for (const auto& obj : results) {
     FusedObject fobj;
     fobj.object = obj.object;
+    fobj.svs_match_id = obj.svs_match_id;
+    fobj.bev_match_id = obj.bev_match_id;
+    fobj.radar_match_id = obj.radar_match_id;
+    fobj.obj_det_prop = obj.obj_det_prop;
+    fobj.state = obj.state;
     GlobalToLocal(pose, obj.object.x, obj.object.y, &fobj.object.x, &fobj.object.y);
     float dis_x = fobj.object.x;
     float dis_y = fobj.object.y;

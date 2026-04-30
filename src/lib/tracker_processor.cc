@@ -61,11 +61,11 @@ void TrackerProcessor::Process(
 }
 
 void TrackerProcessor::checkAndPublish(double meas_time, std::vector<FusedObject>* output) {
-  // std::cout << "beigin UpdateMotSupplementState." << std::endl;
+  // std::cout << "beigin GateKeeperByTracks." << std::endl;
   std::vector<bool> is_fill;
-  UpdateMotSupplementState(meas_time, &is_fill);
-  // std::cout << "beigin PostProcess." << std::endl;
-  PostProcess(is_fill, output);
+  GateKeeperByTracks(meas_time, &is_fill);
+  // std::cout << "beigin CollectOuputs." << std::endl;
+  CollectOuputs(is_fill, output);
 }
 
 void TrackerProcessor::Spawn(const std::vector<FusedObject>& observations,
@@ -253,8 +253,53 @@ void TrackerProcessor::UpdateAssignedTracks(
 
         Track& track = tracks_[j];
         meas_assoc_flag[i] = 1;
+        
+        // 1.motion_update
+        // Calculate time difference for Kalman filter
+        double last_time = track.GetLastTrackingTime();
+        int32_t time_diff = static_cast<int32_t>(obs.object.timestamp - last_time);
+        float dt = static_cast<float>(time_diff) / 1000.0f;
+        if (dt <= 0.0f) {
+          dt = kTimeDiffMin;
+        }
+        if (dt > kTimeDiffMax) {
+          dt = kTimeDiffMax;
+        }
 
-        // 1.Update sensor-specific counters and visibility
+        // Kalman filter: Predict + Update
+        track.Predict(dt);
+        // hitory_det / tracking period
+        track.Update(obs);
+
+        // Update fused object with filtered state
+        float est_x = 0.0f, est_y = 0.0f, est_vx = 0.0f, est_vy = 0.0f;
+        track.GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
+
+        if (std::abs(obs.object.vx) < kVelocityThreshold &&
+            std::abs(obs.object.vy) < kVelocityThreshold) {
+          est_vx = 0.0f;
+          est_vy = 0.0f;
+        }
+
+        FusedObject estimated = track.GetFusedObject();
+        estimated.object.x = est_x;
+        estimated.object.y = est_y;
+        estimated.object.vx = est_vx;
+        estimated.object.vy = est_vy;
+        estimated.state = track.GetState();
+        
+        // Shape + yaw + Type + confidence+ motion_state Update
+        // TODO(Shane Liu): P2-后续拓展每个状态单独创建类来更新维护
+        estimated.object.yaw = obs.object.yaw;
+        estimated.object.length = obs.object.length;
+        estimated.object.height = obs.object.height;
+        estimated.object.width = obs.object.width;
+
+        estimated.object.type = obs.object.type;
+
+        track.SetFusedObject(estimated);
+        // TODO(Shane Liu): 1.更新HistorySensorObject 2.更新未融合的状态 3.更新传感器特定辅助信息
+        // 2.Update sensor-specific counters and visibility
         if (obs.svs_match_id > 0) {
           track.UpdateSvsCounter(true);
           track.SetInvisibilityPeriod(SensorType::kSvs, 0.0);
@@ -292,54 +337,7 @@ void TrackerProcessor::UpdateAssignedTracks(
         // Check stability for all tracks
         track.CheckStability();
 
-        // motion_update
-        // Calculate time difference for Kalman filter
-        double last_time = track.GetLastTrackingTime();
-        int32_t time_diff = static_cast<int32_t>(obs.object.timestamp - last_time);
-        float dt = static_cast<float>(time_diff) / 1000.0f;
-        if (dt <= 0.0f) {
-          dt = kTimeDiffMin;
-        }
-        if (dt > kTimeDiffMax) {
-          dt = kTimeDiffMax;
-        }
-
-        // Kalman filter: Predict + Update
-        track.Predict(dt);
-        // hitory_det / tracking period
-        track.Update(obs);
-
-        // Update fused object with filtered state
-        float est_x = 0.0f, est_y = 0.0f, est_vx = 0.0f, est_vy = 0.0f;
-        track.GetEstimate(&est_x, &est_y, &est_vx, &est_vy);
-
-        if (std::abs(obs.object.vx) < kVelocityThreshold &&
-            std::abs(obs.object.vy) < kVelocityThreshold) {
-          est_vx = 0.0f;
-          est_vy = 0.0f;
-        }
-
-        FusedObject estimated = track.GetFusedObject();
-        estimated.object.x = est_x;
-        estimated.object.y = est_y;
-        estimated.object.vx = est_vx;
-        estimated.object.vy = est_vy;
-        estimated.state = track.GetState();
-        
-
-        // Shape + Type Update
-        estimated.object.yaw = obs.object.yaw;
-        estimated.object.length = obs.object.length;
-        estimated.object.height = obs.object.height;
-        estimated.object.width = obs.object.width;
-
-        estimated.object.type = obs.object.type;
-
-        track.SetFusedObject(estimated);
-
-
         track.SetLastTrackingTime(obs.object.timestamp);
-
         // Found match for this track, no need to check other observations
         break; // Move to next track after processing the first matched observation
       }
@@ -356,14 +354,7 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double mea
       continue;
     }
 
-    // Prune all sensor histories and update invisibility for each
-    track.PruneSensorHistory(SensorType::kSvs, meas_time);
-    track.PruneSensorHistory(SensorType::kBev, meas_time);
-    track.PruneSensorHistory(SensorType::kRadar, meas_time);
-
-    // Update invisibility period for the current sensor (which didn't provide measurement)
-    track.UpdateWithoutSensorObject(sensor_type, meas_time);
-
+    /* motion fusion */
     // Get previous observation from the appropriate sensor history for prediction
     FusedObject prev_obs = track.GetPreviousSensorObject(sensor_type, 1);
 
@@ -397,6 +388,14 @@ void TrackerProcessor::UpdateUnassignedTracks(SensorType sensor_type, double mea
     estimated.object.vy = est_vy;
 
     track.SetFusedObject(estimated);
+
+    // Prune all sensor histories and update invisibility for each
+    track.PruneSensorHistory(SensorType::kSvs, meas_time);
+    track.PruneSensorHistory(SensorType::kBev, meas_time);
+    track.PruneSensorHistory(SensorType::kRadar, meas_time);
+
+    // Update invisibility period for the current sensor (which didn't provide measurement)
+    track.UpdateWithoutSensorObject(sensor_type, meas_time);
 
     track.SetLastTrackingTime(meas_time); // 主要用于下次有观测对其更新时，每次dt控制
     track.SetMeasFlag(1);
@@ -525,7 +524,7 @@ void TrackerProcessor::RemoveLostTrack() {
   std::cout << "RemoveLostTrack::Removed " << del_track_cnt << " lost tracks."<< std::endl;
 }
 
-void TrackerProcessor::UpdateMotSupplementState(double meas_time,
+void TrackerProcessor::GateKeeperByTracks(double meas_time,
                                                 std::vector<bool>* is_fill) {
   if (is_fill == nullptr) {
     return;
@@ -556,16 +555,17 @@ void TrackerProcessor::UpdateMotSupplementState(double meas_time,
         out.object.vy = track.GetFusedObject().object.vy;
 
         out.state = track.GetState();
-        out.object.type = lastest_obs.object.type;
-        out.object.yaw = lastest_obs.object.yaw;
-        out.object.length = lastest_obs.object.length;
-        out.object.width = lastest_obs.object.width;
-        out.object.height = lastest_obs.object.height;
-        out.obj_det_prop = lastest_obs.obj_det_prop;
-        out.svs_match_id = lastest_obs.svs_match_id;
-        out.bev_match_id = lastest_obs.bev_match_id;
-        out.radar_match_id = lastest_obs.radar_match_id;
-        out.object.motion_status = lastest_obs.object.motion_status;
+        out.object.type = track.GetFusedObject().object.type;
+        out.object.yaw = track.GetFusedObject().object.yaw;
+        out.object.length = track.GetFusedObject().object.length;
+        out.object.width = track.GetFusedObject().object.width;
+        out.object.height = track.GetFusedObject().object.height;
+        out.obj_det_prop = track.GetFusedObject().obj_det_prop;
+        out.svs_match_id = track.GetFusedObject().svs_match_id;
+        std::cout << "GateKeeperByTracks:ID:" << std::fixed << static_cast<int>(out.object.id) << " det_id:" << static_cast<int>(out.svs_match_id)  << " yaw:" << out.object.yaw  << std::endl;
+        out.bev_match_id = track.GetFusedObject().bev_match_id;
+        out.radar_match_id = track.GetFusedObject().radar_match_id;
+        out.object.motion_status = track.GetFusedObject().object.motion_status;
 
         (*is_fill)[i] = true;
         track.SetOutput(out);
@@ -577,7 +577,7 @@ void TrackerProcessor::UpdateMotSupplementState(double meas_time,
   track_cnt_++;
 }
 
-void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
+void TrackerProcessor::CollectOuputs(const std::vector<bool>& is_fill,
                                    std::vector<FusedObject>* output) {
   if (output == nullptr) {
     return;
@@ -607,7 +607,7 @@ void TrackerProcessor::PostProcess(const std::vector<bool>& is_fill,
         obj.object.motion_status = out.object.motion_status;
         obj.obj_det_prop = out.obj_det_prop;
         obj.object.flag = 1;
-        std::cout << "PostProcess:ID:" << std::fixed << static_cast<int>(obj.object.id) << " det_id:" << static_cast<int>(obj.svs_match_id)  << " yaw:" << obj.object.yaw  << std::endl;
+        std::cout << "CollectOuputs:ID:" << std::fixed << static_cast<int>(obj.object.id) << " det_id:" << static_cast<int>(obj.svs_match_id)  << " yaw:" << obj.object.yaw << " x:" << static_cast<float>(obj.object.x) << " y:" << static_cast<float>(obj.object.y) << std::endl;
         output->push_back(obj);
         idx_f++;
       }

@@ -75,6 +75,7 @@ class MultiObjectTracker {
   void AddGlobalPoseToCache(const GlobalPoseEstimation& input);
   void AddGlobalPoseBufferToCache(const GlobalPoseBuffer& pose_buffer);
 
+  void Inter2msg(const std::vector<FusedObject>& results, const GlobalPose& pose, MultiObjectTrackerOutput* output);
 
   std::vector<FusedObject> ConvertSvsToObservations(const SvsFrame& svs_frame);
 

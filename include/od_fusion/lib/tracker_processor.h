@@ -55,9 +55,9 @@ class TrackerProcessor {
   void CreateNewTracks(const std::vector<FusedObject>& observations,
                       const std::vector<int>& meas_valid_flag, const GlobalPose& glb);
 
-  void UpdateMotSupplementState(double meas_time, std::vector<bool>* is_fill);
+  void GateKeeperByTracks(double meas_time, std::vector<bool>* is_fill);
 
-  void PostProcess(const std::vector<bool>& is_fill,
+  void CollectOuputs(const std::vector<bool>& is_fill,
                    std::vector<FusedObject>* output);
 
   int32_t FindEmptyTrackSlot() const;

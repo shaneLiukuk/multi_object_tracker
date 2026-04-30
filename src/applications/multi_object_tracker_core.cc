@@ -205,7 +205,13 @@ bool MultiObjectTracker::runProcess(const MultiObjectTrackerInput& input,
 
     /* Process Radar */
     // ProcessRadar(frame_data_.radar_frame, frame_data_.radar_pose, 0.0f);
-    
+
+    if (output != nullptr) {
+      std::vector<FusedObject> results;
+      GetFusionResults(&results);
+      Inter2msg(results, frame_data_.svs_pose, output);
+    }
+
     // update lastest timestamp
     lastest_global_pose_time = input.global_pose_in.time_stamp_can;
     lastest_svs_time = input.svs_object_in.time_stamp_raw;
@@ -220,6 +226,66 @@ void MultiObjectTracker::GetFusionResults(std::vector<FusedObject>* results) {
   }
 }
 
+void MultiObjectTracker::Inter2msg(const std::vector<FusedObject>& results,
+                                   const GlobalPose& pose,
+                                   MultiObjectTrackerOutput* output) {
+  if (output == nullptr) {
+    return;
+  }
+  static uint8_T counter = 1;
+  // Initialize output message
+  output->work_status.time_stamp = 0;
+  output->work_status.counter = 0;
+  output->work_status.version = 0;
+  output->work_status.processing_status = 0;
+  output->work_status.processing_status2 = 0;
+  output->work_status.processing_status3 = 0;
+  output->work_status.processing_status4 = 0;
+  output->work_status.processing_status5 = 0;
+  // FusedObjects
+  output->fused_objects_output.time_stamp = 0;
+  output->fused_objects_output.counter = 0;
+  output->fused_objects_output.object_cnt = static_cast<uint8_T>(results.size());
+
+  for (size_t i = 0; i < results.size() && i < 64; ++i) {
+    const auto& obj = results[i];
+    auto& dst = output->fused_objects_output.tracked_object_set[i];    
+    // Object identity
+    dst.id = obj.object.id;
+    dst.type = static_cast<uint8_T>(obj.object.type);
+    // VCS8855
+    GlobalToLocal(pose, obj.object.x, obj.object.y, &dst.rel_distance_x, &dst.rel_distance_y);
+    float dis_x = dst.rel_distance_x;
+    float dis_y = dst.rel_distance_y;
+    CartesianToIso8855(dis_x, dis_y, &dst.rel_distance_x, &dst.rel_distance_y);
+    // counter-clockwise CCW [0.2PI]
+    dst.heading = obj.object.yaw;
+    // Global
+    dst.abs_distance_x = obj.object.x;
+    dst.abs_distance_y = obj.object.y;
+    dst.abs_velocity_x = obj.object.vx;
+    dst.abs_velocity_y = obj.object.vy;
+    double yaw_tmp = YawIso8855ToCs3(obj.object.yaw);
+    dst.yaw = NormalizeAngle2Pi(yaw_tmp);
+    dst.length = obj.object.length;
+    dst.width = obj.object.width;
+    dst.height = obj.object.height;
+    dst.timestamp = static_cast<uint64_T>(obj.object.timestamp);
+    dst.motion_state = static_cast<uint8_T>(obj.object.motion_status);
+    dst.detect_state = obj.object.flag;
+    dst.match_ids = obj.svs_match_id ? obj.svs_match_id
+                        : (obj.bev_match_id ? obj.bev_match_id : obj.radar_match_id);
+    dst.type_confidence = 1.0f;
+    dst.source = static_cast<uint8_T>(obj.obj_det_prop);
+  }
+
+  if (!results.empty()) {
+    output->fused_objects_output.time_stamp = static_cast<uint64_T>(results[0].object.timestamp);
+  }
+  counter = (counter + 1) % 256;
+  output->fused_objects_output.counter = counter;
+}
+
 void MultiObjectTracker::GetFrameData(FrameData* frame_data) {
   if (frame_data == nullptr) {
     return;
@@ -231,7 +297,7 @@ void MultiObjectTracker::GetFrameData(FrameData* frame_data) {
 
 bool MultiObjectTracker::msg2InterFrame(const MultiObjectTrackerInput& input, FrameData& frame) {
 
-  // TODO(Shane Liu): object num is 0 ? timestamo is not update?
+  // TODO(Shane Liu): object num is 0 ? timestamp is not update?
   SvsFrame svs_f;
   GlobalPose svs_pose;
 
@@ -364,8 +430,6 @@ SvsFrame MultiObjectTracker::ConvertObjectSetToSvsFrame(const ObjectSet& msg, co
     LocalToGlobal(pose, obj_info.distance_x, obj_info.distance_y, &svs_obj.object.x, &svs_obj.object.y);
     // svs_obj.object.x = obj_info.distance_x;
     // svs_obj.object.y = obj_info.distance_y;
-    std::cout << "ConvertObjectSetToSvsFrame:" << std::fixed << " abs_vx:" << obj_info.relative_velocity_x << " abs_vy:" << obj_info.relative_velocity_y << std::endl;
-    svs_frame.svs_object_list.push_back(svs_obj);
     LocalToGlobalVel(pose, obj_info.relative_velocity_x, obj_info.relative_velocity_y, &svs_obj.object.vx, &svs_obj.object.vy);
     // svs_obj.object.vx = obj_info.relative_velocity_x;
     // svs_obj.object.vy = obj_info.relative_velocity_y;

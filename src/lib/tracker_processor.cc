@@ -562,7 +562,7 @@ void TrackerProcessor::GateKeeperByTracks(double meas_time,
         out.object.height = track.GetFusedObject().object.height;
         out.obj_det_prop = track.GetFusedObject().obj_det_prop;
         out.svs_match_id = track.GetFusedObject().svs_match_id;
-        std::cout << "GateKeeperByTracks:ID:" << std::fixed << static_cast<int>(out.object.id) << " det_id:" << static_cast<int>(out.svs_match_id)  << " yaw:" << out.object.yaw  << std::endl;
+        // std::cout << "GateKeeperByTracks:ID:" << std::fixed << static_cast<int>(out.object.id) << " det_id:" << static_cast<int>(out.svs_match_id)  << " yaw:" << out.object.yaw  << std::endl;
         out.bev_match_id = track.GetFusedObject().bev_match_id;
         out.radar_match_id = track.GetFusedObject().radar_match_id;
         out.object.motion_status = track.GetFusedObject().object.motion_status;
@@ -607,7 +607,7 @@ void TrackerProcessor::CollectOuputs(const std::vector<bool>& is_fill,
         obj.object.motion_status = out.object.motion_status;
         obj.obj_det_prop = out.obj_det_prop;
         obj.object.flag = 1;
-        std::cout << "CollectOuputs:ID:" << std::fixed << static_cast<int>(obj.object.id) << " det_id:" << static_cast<int>(obj.svs_match_id)  << " yaw:" << obj.object.yaw << " x:" << static_cast<float>(obj.object.x) << " y:" << static_cast<float>(obj.object.y) << std::endl;
+        // std::cout << "CollectOuputs:ID:" << std::fixed << static_cast<int>(obj.object.id) << " det_id:" << static_cast<int>(obj.svs_match_id)  << " yaw:" << obj.object.yaw << " x:" << static_cast<float>(obj.object.x) << " y:" << static_cast<float>(obj.object.y) << std::endl;
         output->push_back(obj);
         idx_f++;
       }

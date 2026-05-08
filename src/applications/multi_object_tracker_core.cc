@@ -301,7 +301,7 @@ bool MultiObjectTracker::msg2InterFrame(const MultiObjectTrackerInput& input, Fr
   SvsFrame svs_f;
   GlobalPose svs_pose;
 
-  if (!QueryNearestLocalization(input.svs_object_in.time_stamp * 1e-3, svs_pose)) {
+  if (!QueryNearestLocalization(input.svs_object_in.time_stamp_raw * 1e-3, svs_pose)) {
     std::cout << "WARNNING:svs no sync pose." << std::endl;
     return false;
   }
@@ -401,7 +401,7 @@ bool MultiObjectTracker::QueryNearestLocalization(const double& timestamp, Globa
   }
 
   if (abs(stamp - loc_ts) > 0.3) {
-    std::cout << "QueryNearestLocalization: Time distance " << std::setprecision(3) << abs(stamp - loc_ts)
+    std::cout << "QueryNearestLocalization: Time distance " << std::fixed << std::setprecision(3) << abs(stamp - loc_ts)
            << " between fusion objects: " << std::setprecision(18) << stamp << " and localization: " << std::setprecision(18) << loc_ts
            << " is too long." << std::endl;
     return false;
@@ -460,7 +460,7 @@ SvsFrame MultiObjectTracker::ConvertObjectSetToSvsFrame(const ObjectSet& msg, co
       case 4: svs_obj.object.motion_status = MotionStatus::kStopped; break;
       default: svs_obj.object.motion_status = MotionStatus::kUnknown; break;
     }
-    std::cout << "ConvertObjectSetToSvsFrame:" << std::fixed << i << " ID:" << static_cast<int>(svs_obj.object.id) << " YAW:" <<  svs_obj.object.yaw << " abs_vx:" << svs_obj.object.vx << " abs_vy:" << svs_obj.object.vy << std::endl;
+    // std::cout << "ConvertObjectSetToSvsFrame:" << std::fixed << i << " ID:" << static_cast<int>(svs_obj.object.id) << " YAW:" <<  svs_obj.object.yaw << " abs_vx:" << svs_obj.object.vx << " abs_vy:" << svs_obj.object.vy << std::endl;
     svs_frame.svs_object_list.push_back(svs_obj);
   }
 

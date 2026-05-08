@@ -234,7 +234,7 @@ void RvizDisplay::PublishObjectsToRviz(
     text_marker.pose.position.x = dis_x;
     text_marker.pose.position.y = dis_y;
     text_marker.pose.position.z = 0.5;
-    text_marker.scale.z = 1.0;
+    text_marker.scale.z = 0.5;
     // text_marker.color.r = 1.0;
     // text_marker.color.g = 1.0;
     // text_marker.color.b = 1.0;
@@ -247,7 +247,7 @@ void RvizDisplay::PublishObjectsToRviz(
 
     text_marker.text = "MATCH_ID: " + std::to_string(static_cast<int>(fobj.svs_match_id));    
 
-    std::cout << ns << "-PublishObjectsToRviz: ID:" << std::fixed << static_cast<int>(obj.id) << " x:" << dis_x << " y:" << dis_y << " v:" << abs_velocity << " yaw:" << yawIso8855 << " det_id:" << static_cast<int>(fobj.svs_match_id) << std::endl;
+    // std::cout << ns << "-PublishObjectsToRviz: ID:" << std::fixed << static_cast<int>(obj.id) << " x:" << dis_x << " y:" << dis_y << " v:" << abs_velocity << " yaw:" << yawIso8855 << " det_id:" << static_cast<int>(fobj.svs_match_id) << std::endl;
     marker_array.markers.push_back(text_marker);
 
     // -------------------- 圆柱点 --------------------
